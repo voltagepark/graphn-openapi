@@ -321,25 +321,6 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
 
-  /v1/{workspaceId}/custom-models/supported-architectures:
-    parameters:
-      - $ref: '#/components/parameters/WorkspaceId'
-    get:
-      operationId: listSupportedArchitectures
-      tags: [custom-models]
-      summary: List supported model architectures and their capabilities
-      responses:
-        '200':
-          description: Supported architecture list.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SupportedArchitectures'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-
   /v1/{workspaceId}/secrets:
     parameters:
       - $ref: '#/components/parameters/WorkspaceId'
@@ -1135,27 +1116,6 @@ components:
         max_context_length:
           type: integer
           nullable: true
-
-    ArchitectureInfo:
-      type: object
-      additionalProperties: false
-      required: [name, capabilities]
-      properties:
-        name:
-          type: string
-          description: HuggingFace architecture identifier (e.g. `LlamaForCausalLM`).
-        capabilities:
-          type: array
-          items: { $ref: '#/components/schemas/Capability' }
-
-    SupportedArchitectures:
-      type: object
-      additionalProperties: false
-      required: [architectures]
-      properties:
-        architectures:
-          type: array
-          items: { $ref: '#/components/schemas/ArchitectureInfo' }
 
     Secret:
       type: object

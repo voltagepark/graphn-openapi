@@ -13,6 +13,24 @@ workflow promotes that section to the new version on tag push.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-04-25
+
+Patch release. No new operations; small spec hygiene + docs fixes.
+
+### Removed
+
+- `getSupportedArchitectures` (`GET /v1/{workspaceId}/custom-models/supported-architectures`)
+  and the `SupportedArchitectures` / `ArchitectureInfo` component schemas.
+  This operation was declared in v0.1.0 but never implemented in the
+  control plane (returned 404). Removed before any client could rely
+  on it.
+
+### Fixed
+
+- Public mirror's `README.md` now points to the real docs host
+  (`https://graphn.ai/docs` and `https://graphn.ai/api`) instead of
+  the placeholder `docs.graphn.ai` subdomain that was never set up.
+
 ## [0.1.0] - 2026-04-24
 
 ### Added
@@ -20,7 +38,7 @@ workflow promotes that section to the new version on tag push.
 - Initial public release of the GraphN OpenAPI 3.1 specification.
 - Custom model lifecycle: `createCustomModel`, `listCustomModels`,
   `getCustomModel`, `refreshCustomModel`, `wakeCustomModel`,
-  `deleteCustomModel`, `validateCustomModel`, `getSupportedArchitectures`,
+  `deleteCustomModel`, `validateCustomModel`,
   `getCustomModelAccess`, `getGpuHours`.
 - Workspace secrets: `createSecret`, `listSecrets`, `getSecret`,
   `updateSecret`, `deleteSecret`.

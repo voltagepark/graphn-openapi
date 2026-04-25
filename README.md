@@ -115,7 +115,7 @@ licensing purposes.
 
 ## Support
 
-- Docs: <https://docs.graphn.ai>
-- API status: <https://status.graphn.ai>
+- Docs: <https://graphn.ai/docs>
+- API explorer: <https://graphn.ai/api>
 - Issues: <https://github.com/voltagepark/graphn-openapi/issues>
 - Email: <support@graphn.ai>
