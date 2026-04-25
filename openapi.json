@@ -1,0 +1,2176 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Graphn API",
+    "version": "0.1.0",
+    "description": "Public API for the Graphn AI platform.\n\n\nThe Graphn API exposes the customer-facing surface for managing custom\nmodel imports, secrets, and OpenAI-compatible inference (chat\ncompletions, model listings, and TTS synthesis).\n\n## Hosts\n\nThe API is split across two hosts:\n\n- **Control plane** (`https://cp.graphn.ai`) — workspace-scoped CRUD\n  for custom models and secrets.\n- **Inference** (`https://model.graphn.ai`) — OpenAI-compatible\n  chat completions, model listings, and TTS.\n\nOperations are tagged and use per-operation `servers` overrides to\nindicate which host they target. Generated SDKs that respect\nOpenAPI 3.1 per-operation `servers` (openapi-python-client >= 0.20,\nopenapi-generator >= 6.0, oapi-codegen >= 1.16) will route correctly\nout of the box.\n\n## Authentication\n\nAll endpoints require a workspace-scoped API key passed as\n`Authorization: Bearer gn_...`. Create keys in the Graphn dashboard.\n\n## Errors\n\nAll errors return a JSON envelope:\n\n```json\n{ \"code\": \"NOT_FOUND\", \"message\": \"model not found\" }\n```\n\nThe `code` field is a machine-readable identifier; `message` is\nintended for end-user display.\n",
+    "contact": {
+      "name": "Graphn Support",
+      "url": "https://graphn.ai/support"
+    },
+    "license": {
+      "name": "Proprietary"
+    }
+  },
+  "servers": [
+    {
+      "url": "https://cp.graphn.ai",
+      "description": "Control plane (default)",
+      "x-graphn-name": "control-plane"
+    },
+    {
+      "url": "https://model.graphn.ai",
+      "description": "Inference",
+      "x-graphn-name": "inference"
+    }
+  ],
+  "security": [
+    {
+      "ApiKeyAuth": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "custom-models",
+      "description": "Manage custom model imports — register a HuggingFace or S3-hosted\nmodel, monitor its deployment, and tear it down. Inference against\na `ready` custom model uses the `chat.completions` endpoint with\nthe model's `name`.\n"
+    },
+    {
+      "name": "secrets",
+      "description": "Workspace-scoped opaque secrets (e.g. HuggingFace tokens, third-party\nAPI keys) referenced by other resources via their `id`.\n"
+    },
+    {
+      "name": "chat",
+      "description": "OpenAI-compatible chat completions."
+    },
+    {
+      "name": "models",
+      "description": "List available models for a workspace."
+    },
+    {
+      "name": "tts",
+      "description": "Text-to-speech synthesis and voice catalog."
+    },
+    {
+      "name": "imported-models",
+      "description": "Test connectivity and discover available models on an external\nOpenAI-compatible endpoint before importing it.\n"
+    }
+  ],
+  "paths": {
+    "/v1/{workspaceId}/custom-models": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/WorkspaceId"
+        }
+      ],
+      "post": {
+        "operationId": "createCustomModel",
+        "tags": [
+          "custom-models"
+        ],
+        "summary": "Register a new custom model",
+        "description": "Begin import + deployment of a custom model. The response returns\nimmediately with `status: \"deploying\"`. Poll `getCustomModel`\n(or use the SDK's `wait_until_ready`) until the status reaches\n`ready` or `failed`.\n",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CustomModelCreate"
+              },
+              "examples": {
+                "huggingface": {
+                  "summary": "HuggingFace import",
+                  "value": {
+                    "name": "my-llama",
+                    "huggingface_model_id": "meta-llama/Llama-3-8B-Instruct",
+                    "hf_token_secret_id": "sec_01HABCXYZ",
+                    "gpu_count": 1,
+                    "max_replicas": 1
+                  }
+                },
+                "s3PresignedUrl": {
+                  "summary": "S3 presigned URL import",
+                  "value": {
+                    "name": "internal-model",
+                    "weight_source": "s3_presigned",
+                    "s3_url": "https://my-bucket.s3.amazonaws.com/model.tar.gz?X-Amz-..."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Model accepted; deployment started.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomModel"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      },
+      "get": {
+        "operationId": "listCustomModels",
+        "tags": [
+          "custom-models"
+        ],
+        "summary": "List custom models in a workspace",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/ContinueToken"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of custom models.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomModelList"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/v1/{workspaceId}/custom-models/{modelId}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/WorkspaceId"
+        },
+        {
+          "$ref": "#/components/parameters/ModelId"
+        }
+      ],
+      "get": {
+        "operationId": "getCustomModel",
+        "tags": [
+          "custom-models"
+        ],
+        "summary": "Get a custom model",
+        "description": "Returns the latest known state of the custom model, enriched with\nlive deployment status (replica counts, endpoint readiness).\n",
+        "responses": {
+          "200": {
+            "description": "Custom model record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomModel"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteCustomModel",
+        "tags": [
+          "custom-models"
+        ],
+        "summary": "Delete a custom model",
+        "description": "Tears down the deployment and removes the model record. Idempotent.\n",
+        "responses": {
+          "204": {
+            "description": "Model deleted."
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/v1/{workspaceId}/custom-models/{modelId}/refresh": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/WorkspaceId"
+        },
+        {
+          "$ref": "#/components/parameters/ModelId"
+        }
+      ],
+      "post": {
+        "operationId": "refreshCustomModel",
+        "tags": [
+          "custom-models"
+        ],
+        "summary": "Refresh a custom model's status",
+        "description": "Forces a re-fetch of live deployment status from the underlying\ncluster. Useful when a model has been scaled to zero or recently\nupdated. The returned record may include refreshed `endpoint`,\n`status`, and `error_message` fields.\n",
+        "responses": {
+          "200": {
+            "description": "Refreshed model record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomModel"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/v1/{workspaceId}/custom-models/{modelId}/wake": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/WorkspaceId"
+        },
+        {
+          "$ref": "#/components/parameters/ModelId"
+        }
+      ],
+      "post": {
+        "operationId": "wakeCustomModel",
+        "tags": [
+          "custom-models"
+        ],
+        "summary": "Wake a scaled-to-zero custom model",
+        "description": "Custom models scale to zero replicas after `cooldown_seconds` of\ninactivity. Calling `wake` brings the deployment back up to its\nconfigured `min_replicas` (or 1 if `min_replicas` is 0). Returns\nimmediately; poll `getCustomModel` until `status: \"ready\"` and a\nnon-empty `endpoint`.\n",
+        "responses": {
+          "200": {
+            "description": "Wake initiated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomModel"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "description": "Model has no active deployment to wake.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/{workspaceId}/custom-models/{modelId}/gpu-hours": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/WorkspaceId"
+        },
+        {
+          "$ref": "#/components/parameters/ModelId"
+        }
+      ],
+      "get": {
+        "operationId": "getCustomModelGpuHours",
+        "tags": [
+          "custom-models"
+        ],
+        "summary": "Get cumulative GPU-hours billed for a custom model",
+        "responses": {
+          "200": {
+            "description": "GPU-hours total since model creation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GpuHoursResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/v1/{workspaceId}/custom-models/access": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/WorkspaceId"
+        }
+      ],
+      "get": {
+        "operationId": "checkCustomModelAccess",
+        "tags": [
+          "custom-models"
+        ],
+        "summary": "Check whether the workspace is allowlisted for custom models",
+        "description": "Custom model imports are gated by an internal allowlist while the\nfeature is in beta. Use this endpoint before showing import UI.\n",
+        "responses": {
+          "200": {
+            "description": "Allowlist check result.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomModelAccess"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/v1/{workspaceId}/custom-models/validate": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/WorkspaceId"
+        }
+      ],
+      "post": {
+        "operationId": "validateCustomModel",
+        "tags": [
+          "custom-models"
+        ],
+        "summary": "Validate a HuggingFace model before import",
+        "description": "Inspects the HuggingFace `config.json` to verify the model\narchitecture is supported, estimates GPU memory requirements,\nand reports whether the model supports speculative decoding.\nAlways returns 200 — failures are reflected by `valid: false`\nand a populated `error` field.\n",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ValidateModelRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Validation result.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidateModelResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/v1/{workspaceId}/custom-models/supported-architectures": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/WorkspaceId"
+        }
+      ],
+      "get": {
+        "operationId": "listSupportedArchitectures",
+        "tags": [
+          "custom-models"
+        ],
+        "summary": "List supported model architectures and their capabilities",
+        "responses": {
+          "200": {
+            "description": "Supported architecture list.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupportedArchitectures"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/v1/{workspaceId}/secrets": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/WorkspaceId"
+        }
+      ],
+      "post": {
+        "operationId": "createSecret",
+        "tags": [
+          "secrets"
+        ],
+        "summary": "Create a workspace secret",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SecretCreate"
+              },
+              "examples": {
+                "huggingfaceToken": {
+                  "summary": "HuggingFace access token",
+                  "value": {
+                    "name": "hf-token",
+                    "value": "hf_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Secret created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Secret"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      },
+      "get": {
+        "operationId": "listSecrets",
+        "tags": [
+          "secrets"
+        ],
+        "summary": "List workspace secrets",
+        "description": "Returns secret metadata only — `value_preview` is the first few\ncharacters of the value, suitable for UI display. The full\nplaintext value is never returned.\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/ContinueToken"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of secrets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecretList"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/v1/{workspaceId}/secrets/{secretId}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/WorkspaceId"
+        },
+        {
+          "$ref": "#/components/parameters/SecretId"
+        }
+      ],
+      "put": {
+        "operationId": "updateSecret",
+        "tags": [
+          "secrets"
+        ],
+        "summary": "Update a secret's value",
+        "description": "Rotates the secret's plaintext value. The secret's `name` and\nother metadata are immutable; create a new secret if you need\na different name.\n",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SecretUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Secret updated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Secret"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteSecret",
+        "tags": [
+          "secrets"
+        ],
+        "summary": "Delete a secret",
+        "responses": {
+          "204": {
+            "description": "Secret deleted."
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/v1/chat/completions": {
+      "post": {
+        "operationId": "createChatCompletion",
+        "tags": [
+          "chat"
+        ],
+        "summary": "OpenAI-compatible chat completion",
+        "description": "Accepts the standard OpenAI chat completion request body. When\n`stream: true`, the response is a `text/event-stream` of OpenAI\nSSE chunks. Use a custom model's `name` (or a built-in model's\nalias) as the `model` field.\n",
+        "servers": [
+          {
+            "url": "https://model.graphn.ai"
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/WorkspaceIdHeader"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatCompletionRequest"
+              },
+              "examples": {
+                "builtIn": {
+                  "summary": "Built-in model",
+                  "value": {
+                    "model": "qwen3-80b",
+                    "messages": [
+                      {
+                        "role": "user",
+                        "content": "Write a haiku about GPUs."
+                      }
+                    ]
+                  }
+                },
+                "customModel": {
+                  "summary": "Custom model with streaming",
+                  "value": {
+                    "model": "my-llama",
+                    "stream": true,
+                    "messages": [
+                      {
+                        "role": "user",
+                        "content": "Hi"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OpenAI-compatible response. When `stream: true`, the body is\na `text/event-stream` of OpenAI chunks; otherwise a JSON\nresponse.\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatCompletionResponse"
+                }
+              },
+              "text/event-stream": {
+                "schema": {
+                  "type": "string",
+                  "description": "Newline-delimited OpenAI SSE chunks ending in `data: [DONE]`."
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InferenceBadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/InferenceNotFound"
+          },
+          "503": {
+            "$ref": "#/components/responses/InferenceUnavailable"
+          }
+        }
+      }
+    },
+    "/v1/models": {
+      "get": {
+        "operationId": "listModels",
+        "tags": [
+          "models"
+        ],
+        "summary": "List models available to the workspace",
+        "description": "Returns built-in models, imported models, and custom models in\nOpenAI `/v1/models` format. Use the returned `id` as the `model`\nfield on `createChatCompletion`.\n",
+        "servers": [
+          {
+            "url": "https://model.graphn.ai"
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/WorkspaceIdHeader"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Model list.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelList"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/v1/tts": {
+      "post": {
+        "operationId": "synthesizeSpeech",
+        "tags": [
+          "tts"
+        ],
+        "summary": "Synthesize speech from text",
+        "description": "Returns audio bytes in the format implied by `responseFormat`\n(Qwen models) or fixed by the upstream provider (Rime returns\nMP3). Streaming is provider-defined.\n",
+        "servers": [
+          {
+            "url": "https://model.graphn.ai"
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/WorkspaceIdHeader"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TTSRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Synthesized audio.",
+            "content": {
+              "audio/mpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "audio/wav": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "audio/opus": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "audio/flac": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "audio/pcm": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InferenceBadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/InferenceNotFound"
+          }
+        }
+      }
+    },
+    "/v1/tts/voices": {
+      "get": {
+        "operationId": "listTtsVoices",
+        "tags": [
+          "tts"
+        ],
+        "summary": "List TTS voices for a model",
+        "servers": [
+          {
+            "url": "https://model.graphn.ai"
+          }
+        ],
+        "parameters": [
+          {
+            "name": "model",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Model alias to list voices for."
+          },
+          {
+            "$ref": "#/components/parameters/WorkspaceIdHeader"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Voice catalog. Schema is provider-specific; treat the\nresponse as opaque JSON keyed by `voices[].id`.\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InferenceBadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/v1/imported-models/discover-models": {
+      "post": {
+        "operationId": "discoverImportedModels",
+        "tags": [
+          "imported-models"
+        ],
+        "summary": "List models available at an external OpenAI-compatible endpoint",
+        "description": "Calls `{endpoint}/models` using the API key resolved from the\nreferenced workspace secret. Filters out non-chat models\n(embeddings, TTS, image, moderation, etc.).\n",
+        "servers": [
+          {
+            "url": "https://model.graphn.ai"
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/WorkspaceIdHeader"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DiscoverImportedModelsRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Discovered chat models.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscoverImportedModelsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InferenceBadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "502": {
+            "description": "Upstream endpoint returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InferenceError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/imported-models/test-connection": {
+      "post": {
+        "operationId": "testImportedModelConnection",
+        "tags": [
+          "imported-models"
+        ],
+        "summary": "Test connectivity to an external chat model",
+        "description": "Sends a single chat completion to the configured endpoint and\nreturns the response text. Use to verify credentials and\nendpoint URL before importing.\n",
+        "servers": [
+          {
+            "url": "https://model.graphn.ai"
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/WorkspaceIdHeader"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TestConnectionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Test completion succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TestConnectionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InferenceBadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "502": {
+            "description": "Upstream endpoint returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InferenceError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "ApiKeyAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "graphn-api-key",
+        "description": "Workspace-scoped API key issued in the Graphn dashboard. Format:\n`Authorization: Bearer gn_...`.\n"
+      }
+    },
+    "parameters": {
+      "WorkspaceId": {
+        "name": "workspaceId",
+        "in": "path",
+        "required": true,
+        "description": "Workspace identifier the request is scoped to.",
+        "schema": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_-]+$",
+          "minLength": 1
+        },
+        "example": "ws_01HABCXYZ"
+      },
+      "WorkspaceIdHeader": {
+        "name": "X-Workspace-Id",
+        "in": "header",
+        "required": false,
+        "description": "Workspace identifier. Optional when the API key itself is\nworkspace-scoped (the standard case); required only when calling\nwith an unscoped or system credential.\n",
+        "schema": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_-]+$"
+        }
+      },
+      "ModelId": {
+        "name": "modelId",
+        "in": "path",
+        "required": true,
+        "description": "Custom model identifier.",
+        "schema": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_-]+$"
+        },
+        "example": "cm_01HABCXYZ"
+      },
+      "SecretId": {
+        "name": "secretId",
+        "in": "path",
+        "required": true,
+        "description": "Secret identifier.",
+        "schema": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_-]+$"
+        },
+        "example": "sec_01HABCXYZ"
+      },
+      "Limit": {
+        "name": "limit",
+        "in": "query",
+        "required": false,
+        "description": "Maximum number of items to return per page.",
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200,
+          "default": 50
+        }
+      },
+      "ContinueToken": {
+        "name": "continue_token",
+        "in": "query",
+        "required": false,
+        "description": "Opaque pagination cursor returned by a previous list response.\nPass back unchanged to fetch the next page.\n",
+        "schema": {
+          "type": "string"
+        }
+      }
+    },
+    "responses": {
+      "Unauthorized": {
+        "description": "Missing or invalid API key.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "code": "UNAUTHORIZED",
+              "message": "missing or invalid API key"
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "API key is valid but not authorized for this resource.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "code": "FORBIDDEN",
+              "message": "API key is not valid for this workspace"
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "Resource does not exist or is not visible to this workspace.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "code": "NOT_FOUND",
+              "message": "custom model not found"
+            }
+          }
+        }
+      },
+      "Conflict": {
+        "description": "Resource conflict (duplicate name, etc.).",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "code": "NAME_CONFLICT",
+              "message": "a custom model with this name already exists"
+            }
+          }
+        }
+      },
+      "ValidationError": {
+        "description": "Request body or query parameters failed validation.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "code": "VALIDATION_ERROR",
+              "message": "huggingface_model_id is required when weight_source is \"huggingface\""
+            }
+          }
+        }
+      },
+      "InferenceBadRequest": {
+        "description": "Inference request was malformed.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/InferenceError"
+            }
+          }
+        }
+      },
+      "InferenceNotFound": {
+        "description": "Model could not be resolved.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/InferenceError"
+            }
+          }
+        }
+      },
+      "InferenceUnavailable": {
+        "description": "Custom model is not in the `ready` state (still deploying,\nscaled to zero, or failed). Call `wakeCustomModel` if scaled\nto zero, or `getCustomModel` to inspect the current `status`.\n",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/InferenceError"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Machine-readable error identifier.",
+            "example": "NOT_FOUND"
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-readable error description."
+          }
+        }
+      },
+      "InferenceError": {
+        "type": "object",
+        "description": "OpenAI-style error envelope returned by the inference host. The\nshape mirrors the OpenAI API for compatibility with existing\nOpenAI client libraries.\n",
+        "properties": {
+          "error": {
+            "type": "object",
+            "properties": {
+              "message": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string"
+              },
+              "param": {
+                "type": "string",
+                "nullable": true
+              },
+              "code": {
+                "type": "string",
+                "nullable": true
+              }
+            }
+          }
+        }
+      },
+      "WeightSource": {
+        "type": "string",
+        "enum": [
+          "huggingface",
+          "s3_presigned",
+          "s3_assume_role"
+        ],
+        "description": "Source of the model weights:\n- `huggingface`: download from HuggingFace using `huggingface_model_id`\n- `s3_presigned`: download from a presigned S3 URL\n- `s3_assume_role`: download from S3 using an assumed IAM role\n"
+      },
+      "Capability": {
+        "type": "string",
+        "enum": [
+          "tool_calling",
+          "vision",
+          "embedding",
+          "reasoning"
+        ],
+        "description": "A model capability tag used for filtering and routing."
+      },
+      "CustomModelStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "deploying",
+          "ready",
+          "failed",
+          "deleting"
+        ],
+        "description": "Lifecycle state:\n- `pending`: record created, deployment not yet started\n- `deploying`: weights downloading, replicas booting\n- `ready`: at least one replica is serving (or scaled to zero with cooldown)\n- `failed`: deployment failed; see `error_message`\n- `deleting`: teardown in progress\n"
+      },
+      "CustomModel": {
+        "type": "object",
+        "additionalProperties": true,
+        "description": "Public custom model record. Additional internal fields may be\npresent in responses but are not documented and may change\nwithout notice. Generated SDKs ignore them.\n",
+        "required": [
+          "id",
+          "name",
+          "workspace_id",
+          "status",
+          "weight_source",
+          "gpu_count",
+          "capabilities",
+          "min_replicas",
+          "max_replicas",
+          "cooldown_seconds",
+          "gpu_memory_utilization",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Stable model identifier (`cm_...`)."
+          },
+          "name": {
+            "type": "string",
+            "description": "URL-safe model name. Pass this as the `model` field on\n`createChatCompletion` once `status` is `ready`.\n",
+            "pattern": "^[a-zA-Z0-9_\\-/:.]+$",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "display_name": {
+            "type": "string",
+            "description": "Human-friendly name for UI display."
+          },
+          "workspace_id": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/CustomModelStatus"
+          },
+          "weight_source": {
+            "$ref": "#/components/schemas/WeightSource"
+          },
+          "huggingface_model_id": {
+            "type": "string",
+            "description": "Set when `weight_source` is `huggingface`."
+          },
+          "s3_url": {
+            "type": "string",
+            "nullable": true,
+            "description": "Set when `weight_source` is `s3_presigned` or `s3_assume_role`."
+          },
+          "s3_role_arn": {
+            "type": "string",
+            "nullable": true,
+            "description": "Set when `weight_source` is `s3_assume_role`."
+          },
+          "gpu_count": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Number of GPUs allocated per replica."
+          },
+          "max_model_len": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Maximum context length in tokens."
+          },
+          "gpu_memory_utilization": {
+            "type": "number",
+            "minimum": 0.1,
+            "maximum": 1,
+            "description": "Fraction of GPU memory vLLM is allowed to use."
+          },
+          "quantization": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "awq",
+              "gptq",
+              "fp8",
+              "squeezellm",
+              "marlin",
+              "gguf"
+            ],
+            "description": "Weight quantization scheme, if any."
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Capability"
+            }
+          },
+          "min_replicas": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 3,
+            "description": "Minimum replicas to keep warm. `0` allows scale-to-zero."
+          },
+          "max_replicas": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 3,
+            "description": "Maximum replicas the autoscaler may run."
+          },
+          "cooldown_seconds": {
+            "type": "integer",
+            "minimum": 60,
+            "maximum": 3600,
+            "description": "Idle seconds before scaling down to `min_replicas`."
+          },
+          "replicas_available": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Currently serving replicas (live status)."
+          },
+          "endpoint": {
+            "type": "string",
+            "nullable": true,
+            "description": "Internal cluster endpoint serving this model. Informational only — clients should use `chat.completions` with the model's `name`."
+          },
+          "error_message": {
+            "type": "string",
+            "nullable": true,
+            "description": "Populated when `status` is `failed`."
+          },
+          "num_params": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Parameter count detected from the model config."
+          },
+          "estimated_memory_gb": {
+            "type": "number",
+            "nullable": true,
+            "description": "Estimated GPU memory required for serving."
+          },
+          "architectures": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "type": "string"
+            },
+            "description": "HuggingFace `architectures` field from `config.json`."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "CustomModelCreate": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "URL-safe model name; use this when calling `chat.completions`\nonce the model is `ready`. Must be unique within the workspace.\n",
+            "pattern": "^[a-zA-Z0-9_\\-/:.]+$",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "display_name": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "Human-friendly name for UI display. Defaults to `name`."
+          },
+          "weight_source": {
+            "$ref": "#/components/schemas/WeightSource",
+            "default": "huggingface"
+          },
+          "huggingface_model_id": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 200,
+            "description": "Required when `weight_source` is `huggingface`.",
+            "example": "meta-llama/Llama-3-8B-Instruct"
+          },
+          "s3_url": {
+            "type": "string",
+            "maxLength": 2048,
+            "description": "Required when `weight_source` is `s3_presigned` or `s3_assume_role`."
+          },
+          "s3_role_arn": {
+            "type": "string",
+            "pattern": "^arn:aws:iam::\\d{12}:role/.+$",
+            "description": "Required when `weight_source` is `s3_assume_role`."
+          },
+          "hf_token_secret_id": {
+            "type": "string",
+            "description": "ID of a workspace secret holding a HuggingFace access token.\nRequired for gated HuggingFace models.\n"
+          },
+          "gpu_count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 8,
+            "default": 1
+          },
+          "max_model_len": {
+            "type": "integer",
+            "minimum": 256,
+            "maximum": 262144
+          },
+          "gpu_memory_utilization": {
+            "type": "number",
+            "minimum": 0.1,
+            "maximum": 1,
+            "default": 0.9
+          },
+          "quantization": {
+            "type": "string",
+            "enum": [
+              "awq",
+              "gptq",
+              "fp8",
+              "squeezellm",
+              "marlin",
+              "gguf"
+            ]
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Capability"
+            },
+            "default": [
+              "tool_calling"
+            ]
+          },
+          "min_replicas": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 3,
+            "default": 0
+          },
+          "max_replicas": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 3,
+            "default": 1
+          },
+          "cooldown_seconds": {
+            "type": "integer",
+            "minimum": 60,
+            "maximum": 3600,
+            "default": 600
+          }
+        }
+      },
+      "CustomModelList": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": [
+          "items",
+          "total"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CustomModel"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "description": "Number of items in this page (not the global total)."
+          },
+          "continue_token": {
+            "type": "string",
+            "description": "Opaque cursor for the next page; absent when no more pages."
+          }
+        }
+      },
+      "CustomModelAccess": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "allowed"
+        ],
+        "properties": {
+          "allowed": {
+            "type": "boolean",
+            "description": "Whether the workspace may import custom models."
+          }
+        }
+      },
+      "GpuHoursResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "gpu_hours"
+        ],
+        "properties": {
+          "gpu_hours": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Cumulative GPU-hours consumed by this model."
+          }
+        }
+      },
+      "ValidateModelRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "huggingface_model_id"
+        ],
+        "properties": {
+          "huggingface_model_id": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 200
+          },
+          "hf_token_secret_id": {
+            "type": "string",
+            "nullable": true,
+            "description": "ID of a workspace secret holding a HuggingFace token."
+          },
+          "quantization": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "awq",
+              "gptq",
+              "fp8",
+              "squeezellm",
+              "marlin",
+              "gguf"
+            ]
+          },
+          "gpu_memory_utilization": {
+            "type": "number",
+            "minimum": 0.1,
+            "maximum": 1,
+            "default": 0.9
+          }
+        }
+      },
+      "ValidateModelResponse": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": [
+          "valid"
+        ],
+        "properties": {
+          "valid": {
+            "type": "boolean"
+          },
+          "error": {
+            "type": "string",
+            "nullable": true,
+            "description": "Populated when `valid` is `false`."
+          },
+          "architectures": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "supports_mtp": {
+            "type": "boolean",
+            "description": "Whether the model architecture supports native MTP speculative decoding."
+          },
+          "num_params": {
+            "type": "integer",
+            "nullable": true
+          },
+          "estimated_memory_gb": {
+            "type": "number",
+            "nullable": true
+          },
+          "max_context_length": {
+            "type": "integer",
+            "nullable": true
+          }
+        }
+      },
+      "ArchitectureInfo": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "capabilities"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "HuggingFace architecture identifier (e.g. `LlamaForCausalLM`)."
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Capability"
+            }
+          }
+        }
+      },
+      "SupportedArchitectures": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "architectures"
+        ],
+        "properties": {
+          "architectures": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ArchitectureInfo"
+            }
+          }
+        }
+      },
+      "Secret": {
+        "type": "object",
+        "additionalProperties": true,
+        "description": "Workspace secret record. Additional internal fields may be\npresent and are not part of the public contract.\n",
+        "required": [
+          "id",
+          "workspace_id",
+          "name",
+          "value_preview",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "workspace_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9_-]+$",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "value_preview": {
+            "type": "string",
+            "description": "First few characters of the secret value, suitable for UI\ndisambiguation. The full plaintext value is never returned.\n"
+          },
+          "provider_id": {
+            "type": "string",
+            "description": "Optional connector / provider this secret belongs to."
+          },
+          "field_name": {
+            "type": "string",
+            "description": "Optional connector field name."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "SecretCreate": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "value"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9_-]+$",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "value": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Plaintext secret value. Encrypted at rest."
+          },
+          "provider_id": {
+            "type": "string"
+          },
+          "field_name": {
+            "type": "string"
+          }
+        }
+      },
+      "SecretUpdate": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "value"
+        ],
+        "properties": {
+          "value": {
+            "type": "string",
+            "minLength": 1,
+            "description": "New plaintext value."
+          }
+        }
+      },
+      "SecretList": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": [
+          "items",
+          "count"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Secret"
+            }
+          },
+          "count": {
+            "type": "integer",
+            "description": "Number of items in this page."
+          },
+          "continue_token": {
+            "type": "string"
+          }
+        }
+      },
+      "ChatMessage": {
+        "type": "object",
+        "additionalProperties": true,
+        "description": "OpenAI chat message. `content` may be a string, an array of\ncontent parts (text + image / audio / video), or null when\n`tool_calls` is set. See the OpenAI Chat Completions reference\nfor the canonical shape; we forward the entire object unchanged.\n",
+        "required": [
+          "role"
+        ],
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": [
+              "system",
+              "user",
+              "assistant",
+              "tool"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "tool_call_id": {
+            "type": "string"
+          },
+          "tool_calls": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          }
+        }
+      },
+      "ChatCompletionRequest": {
+        "type": "object",
+        "additionalProperties": true,
+        "description": "OpenAI-compatible chat completion request. Additional fields not\nlisted here are forwarded to the upstream model unchanged. See\nthe OpenAI Chat Completions reference for the full set.\n",
+        "required": [
+          "model",
+          "messages"
+        ],
+        "properties": {
+          "model": {
+            "type": "string",
+            "description": "Model name (built-in alias or custom model `name`). For\nimported models, use `imported:<id>`; for custom models you\nmay use either `<name>` or `custom:<id>`.\n"
+          },
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChatMessage"
+            },
+            "minItems": 1
+          },
+          "stream": {
+            "type": "boolean",
+            "default": false
+          },
+          "temperature": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 2
+          },
+          "top_p": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "max_tokens": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "max_completion_tokens": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "tools": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "tool_choice": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "additionalProperties": true
+              }
+            ]
+          },
+          "response_format": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "stop": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            ]
+          },
+          "n": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1
+          },
+          "seed": {
+            "type": "integer"
+          },
+          "user": {
+            "type": "string"
+          }
+        }
+      },
+      "ChatCompletionResponse": {
+        "type": "object",
+        "additionalProperties": true,
+        "description": "OpenAI-compatible chat completion response. Additional fields\nfrom the upstream model are forwarded unchanged.\n",
+        "required": [
+          "id",
+          "object",
+          "created",
+          "model",
+          "choices"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "object": {
+            "type": "string",
+            "enum": [
+              "chat.completion"
+            ]
+          },
+          "created": {
+            "type": "integer",
+            "description": "Unix timestamp."
+          },
+          "model": {
+            "type": "string"
+          },
+          "choices": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true,
+              "required": [
+                "index",
+                "message"
+              ],
+              "properties": {
+                "index": {
+                  "type": "integer"
+                },
+                "message": {
+                  "$ref": "#/components/schemas/ChatMessage"
+                },
+                "finish_reason": {
+                  "type": "string",
+                  "nullable": true
+                }
+              }
+            }
+          },
+          "usage": {
+            "type": "object",
+            "additionalProperties": true,
+            "properties": {
+              "prompt_tokens": {
+                "type": "integer"
+              },
+              "completion_tokens": {
+                "type": "integer"
+              },
+              "total_tokens": {
+                "type": "integer"
+              }
+            }
+          }
+        }
+      },
+      "Model": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "object",
+          "created",
+          "owned_by"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "object": {
+            "type": "string",
+            "enum": [
+              "model"
+            ]
+          },
+          "created": {
+            "type": "integer",
+            "description": "Unix timestamp."
+          },
+          "owned_by": {
+            "type": "string",
+            "enum": [
+              "built-in",
+              "imported",
+              "custom"
+            ]
+          }
+        }
+      },
+      "ModelList": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "object",
+          "data"
+        ],
+        "properties": {
+          "object": {
+            "type": "string",
+            "enum": [
+              "list"
+            ]
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Model"
+            }
+          }
+        }
+      },
+      "TTSRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "model",
+          "text",
+          "speaker"
+        ],
+        "properties": {
+          "model": {
+            "type": "string",
+            "description": "TTS model alias (built-in) or `custom:<id>` / `imported:<id>`."
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Text to synthesize."
+          },
+          "speaker": {
+            "type": "string",
+            "description": "Voice identifier from `listTtsVoices`."
+          },
+          "lang": {
+            "type": "string",
+            "description": "ISO-639-1 language code."
+          },
+          "samplingRate": {
+            "type": "integer",
+            "description": "Output sampling rate in Hz (Rime providers).",
+            "default": 24000
+          },
+          "speedAlpha": {
+            "type": "number",
+            "description": "Playback speed multiplier (1.0 = normal)."
+          },
+          "responseFormat": {
+            "type": "string",
+            "enum": [
+              "wav",
+              "mp3",
+              "opus",
+              "flac",
+              "pcm"
+            ],
+            "description": "Output audio format (Qwen providers)."
+          },
+          "topP": {
+            "type": "number"
+          },
+          "temperature": {
+            "type": "number"
+          },
+          "repetitionPenalty": {
+            "type": "number"
+          },
+          "maxTokens": {
+            "type": "integer"
+          },
+          "instructions": {
+            "type": "string",
+            "description": "Style/instruction prompt (Qwen providers)."
+          }
+        }
+      },
+      "DiscoverImportedModelsRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "endpoint",
+          "api_key_secret_id"
+        ],
+        "properties": {
+          "endpoint": {
+            "type": "string",
+            "format": "uri",
+            "description": "Base URL of the OpenAI-compatible endpoint."
+          },
+          "api_key_secret_id": {
+            "type": "string",
+            "description": "Workspace secret containing the upstream API key."
+          }
+        }
+      },
+      "DiscoveredImportedModel": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "DiscoverImportedModelsResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "models"
+        ],
+        "properties": {
+          "models": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DiscoveredImportedModel"
+            }
+          }
+        }
+      },
+      "TestConnectionRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "endpoint",
+          "model_id"
+        ],
+        "properties": {
+          "endpoint": {
+            "type": "string",
+            "format": "uri"
+          },
+          "model_id": {
+            "type": "string",
+            "description": "Upstream model identifier to test against."
+          },
+          "api_key_secret_id": {
+            "type": "string",
+            "description": "Workspace secret with the upstream API key. Optional for unauthenticated endpoints."
+          },
+          "message": {
+            "type": "string",
+            "description": "Test prompt. Defaults to `\"Hello, respond in one sentence.\"`."
+          }
+        }
+      },
+      "TestConnectionResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "response",
+          "model"
+        ],
+        "properties": {
+          "response": {
+            "type": "string",
+            "description": "Text content of the upstream response."
+          },
+          "model": {
+            "type": "string",
+            "description": "Model id echoed back by the upstream."
+          },
+          "usage": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Optional token usage stats from the upstream."
+          }
+        }
+      }
+    }
+  }
+}
