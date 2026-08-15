@@ -4,8 +4,10 @@
 [![Apache 2.0 licensed clients](https://img.shields.io/badge/clients-Apache%202.0-blue)](#license)
 
 The official OpenAPI 3.1 specification for the [GraphN](https://graphn.ai)
-platform. Use this spec to generate strongly-typed client SDKs in any language
-that has an OpenAPI generator.
+platform (workflows, agents, functions, MCP servers, knowledge bases,
+executions, storage, and OpenAI-compatible inference). Use this spec to
+generate strongly-typed client SDKs in any language that has an OpenAPI
+generator.
 
 > **Source of truth:** this repo is automatically mirrored from a private
 > monorepo on every spec release. Do **not** open PRs against this repo —
@@ -63,13 +65,15 @@ Source: [voltagepark/graphn-sdk-python](https://github.com/voltagepark/graphn-sd
 
 ## Hosts
 
-The API spans two hosts; per-operation `servers` overrides in the spec route
+The API spans four hosts; per-operation `servers` overrides in the spec route
 generated clients automatically:
 
 | Host | Purpose |
 | --- | --- |
-| `https://cp.graphn.ai` | Control plane — workspace-scoped CRUD (custom models, secrets) |
+| `https://cp.graphn.ai` | Control plane — agents, workflows, functions, MCP servers, knowledge bases, secrets, custom models, orgs, billing |
 | `https://model.graphn.ai` | OpenAI-compatible inference (chat, models, TTS) |
+| `https://gateway.graphn.ai` | Async workflow runs, batch jobs, UUID execution polling / cancel |
+| `https://storage.graphn.ai` | S3-style object API (`graphn storage`). The control plane also has a REST overlay at `/v1/{workspaceId}/storages`. |
 
 ## Authentication
 
