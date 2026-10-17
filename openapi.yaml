@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Graphn API
-  version: 0.7.0
+  version: 0.20.3
   description: |
     Public API for the Graphn AI platform.
 
@@ -78,6 +78,10 @@ tags:
     description: |
       Workspace-scoped opaque secrets (e.g. HuggingFace tokens, third-party
       API keys) referenced by other resources via their `id`.
+  - name: connections
+    description: |
+      Workspace-owned authorization grants for native integrations and
+      authenticated remote MCP servers. Credentials never appear in responses.
   - name: chat
     description: OpenAI-compatible chat completions.
   - name: models
@@ -89,6 +93,8 @@ tags:
       Import an external OpenAI-compatible endpoint into a workspace,
       plus probe helpers (`discover-models`, `test-connection`) on the
       inference host.
+  - name: inference-routers
+    description: Workspace-scoped multi-model routing configuration.
   - name: billing
     description: Organization billing account, top-up, and usage operations.
   - name: admin-billing
@@ -242,6 +248,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
     patch:
       operationId: updateCustomModel
       tags: [custom-models]
@@ -278,7 +286,7 @@ paths:
               widenScalingCeiling:
                 summary: Raise the autoscaling ceiling
                 value:
-                  max_replicas: 3
+                  max_replicas: 8
       responses:
         '200':
           description: Updated model record.
@@ -461,6 +469,315 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
 
+  /v1/{workspaceId}/inference-routers:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    post:
+      operationId: createInferenceRouter
+      tags: [inference-routers]
+      summary: Create an inference router draft
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InferenceRouterCreate'
+      responses:
+        '201':
+          description: Router draft created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InferenceRouter'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+    get:
+      operationId: listInferenceRouters
+      tags: [inference-routers]
+      summary: List workspace and platform inference routers
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/ContinueToken'
+      responses:
+        '200':
+          description: Router page. The immutable platform `auto` router is prepended.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InferenceRouterList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /v1/{workspaceId}/inference-routers/{routerId}:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - name: routerId
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      operationId: getInferenceRouter
+      tags: [inference-routers]
+      summary: Get an inference router
+      responses:
+        '200':
+          description: Router record.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InferenceRouter'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      operationId: updateInferenceRouter
+      tags: [inference-routers]
+      summary: Create a new immutable draft revision
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InferenceRouterUpdate'
+      responses:
+        '200':
+          description: Updated router with a new draft revision.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InferenceRouter'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+    delete:
+      operationId: deleteInferenceRouter
+      tags: [inference-routers]
+      summary: Delete a workspace inference router
+      responses:
+        '204':
+          description: Router deleted.
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/{workspaceId}/inference-routers/{routerId}/validate:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - name: routerId
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      operationId: validateInferenceRouter
+      tags: [inference-routers]
+      summary: Validate the current draft and derive its target manifest
+      responses:
+        '200':
+          description: Validated manifest and hash.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InferenceRouterValidation'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/{workspaceId}/inference-routers/{routerId}/publish:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - name: routerId
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      operationId: publishInferenceRouter
+      tags: [inference-routers]
+      summary: Submit a draft revision for controller activation
+      description: The existing active revision remains routable until acknowledgement.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expected_draft_revision]
+              properties:
+                expected_draft_revision:
+                  type: integer
+                  minimum: 1
+      responses:
+        '202':
+          description: Revision is pending controller activation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InferenceRouter'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /v1/{workspaceId}/inference-routers/{routerId}/analytics:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - name: routerId
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      operationId: getInferenceRouterAnalytics
+      tags: [inference-routers]
+      summary: Get router usage analytics
+      description: Available only when inference-router analytics is enabled for the deployment.
+      parameters:
+        - name: start_time
+          in: query
+          required: true
+          schema: { type: string, format: date-time }
+        - name: end_time
+          in: query
+          required: true
+          schema: { type: string, format: date-time }
+        - name: interval
+          in: query
+          schema:
+            type: string
+            enum: [hour, day]
+            default: day
+      responses:
+        '200':
+          description: Router totals, time series, and bounded breakdowns.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InferenceRouterAnalytics'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/{workspaceId}/inference-router-lanes:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    post:
+      operationId: createInferenceRouterLane
+      tags: [inference-routers]
+      summary: Create a workspace custom router lane
+      description: >-
+        A custom lane is a list of literal phrases, matched case-insensitively
+        on word boundaries. Candidates in this workspace's routers reference it
+        as `custom:<id>`. Lanes are visible only inside their own workspace.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InferenceRouterLaneCreate'
+      responses:
+        '201':
+          description: Lane created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InferenceRouterLane'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    get:
+      operationId: listInferenceRouterLanes
+      tags: [inference-routers]
+      summary: List workspace custom router lanes
+      responses:
+        '200':
+          description: Every lane in the workspace, with the routers using each.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InferenceRouterLaneList'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/{workspaceId}/inference-router-lanes/{laneId}:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - name: laneId
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: '^lane_[0-9a-f]{12}$'
+    get:
+      operationId: getInferenceRouterLane
+      tags: [inference-routers]
+      summary: Get a workspace custom router lane
+      responses:
+        '200':
+          description: Lane record.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InferenceRouterLane'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      operationId: updateInferenceRouterLane
+      tags: [inference-routers]
+      summary: Update a workspace custom router lane
+      description: >-
+        Published router revisions keep the lane definition they were saved
+        with; republish a router to apply the change to it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InferenceRouterLaneUpdate'
+      responses:
+        '200':
+          description: Updated lane.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InferenceRouterLane'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+    delete:
+      operationId: deleteInferenceRouterLane
+      tags: [inference-routers]
+      summary: Delete a workspace custom router lane
+      description: >-
+        Refused with 409 while any router's draft, pending, active, or
+        still-draining previous revision references the lane (see
+        `used_by`), including a router save that commits during the delete.
+      responses:
+        '204':
+          description: Lane deleted.
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
   /v1/{workspaceId}/secrets:
     parameters:
       - $ref: '#/components/parameters/WorkspaceId'
@@ -564,6 +881,245 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+
+  /v1/{workspaceId}/connections:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    post:
+      operationId: createConnection
+      tags: [connections]
+      summary: Create a pending workspace connection
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConnectionCreate'
+      responses:
+        '201':
+          description: Pending connection created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Connection'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+    get:
+      operationId: listConnections
+      tags: [connections]
+      summary: List workspace connections
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/ContinueToken'
+      responses:
+        '200':
+          description: A page of connections without credentials.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectionList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /v1/{workspaceId}/connections/{connectionId}:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/ConnectionId'
+    get:
+      operationId: getConnection
+      tags: [connections]
+      summary: Get connection metadata
+      responses:
+        '200':
+          description: Connection metadata without credentials.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Connection'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      operationId: disconnectConnection
+      tags: [connections]
+      summary: Revoke and disconnect a connection
+      description: |
+        Clears the stored credential while retaining the opaque connection ID
+        so dependent resources can be reconnected without rebinding.
+      responses:
+        '204':
+          description: Connection disconnected.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/{workspaceId}/connections/{connectionId}/authorize:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/ConnectionId'
+    post:
+      operationId: authorizeConnection
+      tags: [connections]
+      summary: Start or restart provider authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConnectionAuthorizationStart'
+      responses:
+        '200':
+          description: Browser authorization URL and transaction expiry.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectionAuthorizationChallenge'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /v1/integrations:
+    get:
+      operationId: listIntegrations
+      tags: [connections]
+      summary: List GraphN-managed integration definitions
+      responses:
+        '200':
+          description: Available integrations and their capabilities.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntegrationList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v1/oauth/connections/{providerId}/callback:
+    get:
+      operationId: completeConnectionAuthorization
+      tags: [connections]
+      summary: Complete a provider OAuth authorization
+      description: |
+        Public OAuth callback. Tenant identity, PKCE data, and the final redirect
+        are recovered exclusively from one-time encrypted state.
+      security: []
+      parameters:
+        - name: providerId
+          in: path
+          required: true
+          schema: { type: string, pattern: '^[a-z][a-z0-9_-]*$' }
+        - name: state
+          in: query
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 1024 }
+        - name: code
+          in: query
+          required: false
+          schema: { type: string }
+        - name: error
+          in: query
+          required: false
+          schema: { type: string }
+        - name: error_description
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        '303':
+          description: Redirect to the trusted GraphN web origin.
+        '400':
+          $ref: '#/components/responses/ValidationError'
+
+  /v1/connections/events/gmail:
+    post:
+      operationId: receiveGmailPubSubEvent
+      tags: [connections]
+      summary: Receive a Google Pub/Sub push for Gmail watches
+      description: |
+        Provider callback authenticated with the configured Google Pub/Sub
+        push-service-account OIDC token and exact audience.
+      security:
+        - GoogleOIDC: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GooglePubSubEnvelope'
+      responses:
+        '204':
+          description: Notification accepted and processed.
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          description: Notification processing failed and should be retried.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /v1/internal/workspaces/{workspaceId}/connections/{connectionId}/tools/{toolName}/call:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/ConnectionId'
+      - name: toolName
+        in: path
+        required: true
+        schema: { type: string, minLength: 1, maxLength: 512 }
+    post:
+      operationId: callManagedConnectionTool
+      tags: [connections]
+      summary: Invoke a GraphN-managed MCP tool
+      description: Internal service-to-service endpoint used by Agent Foundry.
+      security:
+        - InternalJWT: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManagedConnectionToolCall'
+      responses:
+        '200':
+          description: Managed tool result.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagedConnectionToolResult'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
 
   /v1/chat/completions:
     post:
@@ -1070,6 +1626,238 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/AdminBillingState'}
+        '502': {description: Billing service unavailable.}
+  /v1/admin/orgs/{orgId}/invoices:
+    parameters:
+      - name: orgId
+        in: path
+        required: true
+        schema: {type: string}
+    get:
+      operationId: adminListBillingStatements
+      tags: [admin-billing]
+      summary: List immutable billing statements for an organization
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema: {type: integer, minimum: 1, maximum: 100}
+      responses:
+        '200':
+          description: Statement list.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminInvoicesResponse'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '502': {description: Billing service unavailable.}
+    post:
+      operationId: adminCreateBillingInvoice
+      tags: [admin-billing]
+      summary: Create or replay an immutable invoice
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AdminInvoiceCreateRequest'}
+      responses:
+        '200':
+          description: Invoice created or replayed.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminInvoiceCreateResponse'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {description: Manifest mismatch or period conflict.}
+        '502': {description: Billing service unavailable.}
+  /v1/admin/orgs/{orgId}/invoices/revisions:
+    parameters:
+      - name: orgId
+        in: path
+        required: true
+        schema: {type: string}
+      - name: from
+        in: query
+        required: true
+        schema: {type: string, format: date-time}
+      - name: to
+        in: query
+        required: true
+        schema: {type: string, format: date-time}
+    get:
+      operationId: adminListBillingInvoiceRevisions
+      tags: [admin-billing]
+      summary: List immutable invoice revisions for a period
+      responses:
+        '200':
+          description: Invoice revisions for the requested period.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminInvoiceRevisionsResponse'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {description: Conflicting invoice state while resolving revisions.}
+        '502': {description: Billing service unavailable.}
+  /v1/admin/orgs/{orgId}/invoices/{periodStart}:
+    parameters:
+      - name: orgId
+        in: path
+        required: true
+        schema: {type: string}
+      - name: periodStart
+        in: path
+        required: true
+        schema: {type: string}
+    get:
+      operationId: adminGetBillingStatement
+      tags: [admin-billing]
+      summary: Get one immutable billing statement detail
+      responses:
+        '200':
+          description: Statement detail.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminInvoiceResponse'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '502': {description: Billing service unavailable.}
+  /v1/admin/orgs/{orgId}/invoices/preview:
+    parameters:
+      - name: orgId
+        in: path
+        required: true
+        schema: {type: string}
+    post:
+      operationId: adminPreviewBillingInvoice
+      tags: [admin-billing]
+      summary: Preview invoiceable statement window and immutable manifest
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AdminInvoicePreviewRequest'}
+      responses:
+        '200':
+          description: Immutable invoice preview.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminInvoicePreviewResponse'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {description: Period overlap or statement selection conflict.}
+        '502': {description: Billing service unavailable.}
+  /v1/admin/orgs/{orgId}/invoices/{invoiceId}/payment-preview:
+    parameters:
+      - name: orgId
+        in: path
+        required: true
+        schema: {type: string}
+      - name: invoiceId
+        in: path
+        required: true
+        schema: {type: string}
+    get:
+      operationId: adminPreviewInvoicePayment
+      tags: [admin-billing]
+      summary: Preview a paid-invoice journal import
+      responses:
+        '200':
+          description: Validated paid-invoice import preview.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminInvoicePaymentPreviewResponse'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {description: Invoice no longer matches import constraints.}
+        '502': {description: Billing service unavailable.}
+  /v1/admin/orgs/{orgId}/invoices/{invoiceId}/record-payment:
+    parameters:
+      - name: orgId
+        in: path
+        required: true
+        schema: {type: string}
+      - name: invoiceId
+        in: path
+        required: true
+        schema: {type: string}
+    post:
+      operationId: adminRecordInvoicePayment
+      tags: [admin-billing]
+      summary: Append a paid-invoice journal payment record
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AdminInvoiceRecordPaymentRequest'}
+      responses:
+        '200':
+          description: Journal invoice-payment row appended or deduplicated.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminInvoiceRecordPaymentResponse'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {description: Preview checksum stale or idempotency payload conflict.}
+        '502': {description: Billing service unavailable.}
+  /v1/admin/orgs/{orgId}/invoices/{invoiceId}/void:
+    parameters:
+      - name: orgId
+        in: path
+        required: true
+        schema: {type: string}
+      - name: invoiceId
+        in: path
+        required: true
+        schema: {type: string}
+    post:
+      operationId: adminVoidBillingInvoice
+      tags: [admin-billing]
+      summary: Void an existing immutable invoice
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AdminInvoiceVoidRequest'}
+      responses:
+        '200':
+          description: Invoice voided.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminInvoiceVoidResponse'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {description: Invoice state changed or cannot be voided.}
+        '502': {description: Billing service unavailable.}
+  /v1/admin/orgs/{orgId}/invoices/{invoiceId}/discount:
+    parameters:
+      - name: orgId
+        in: path
+        required: true
+        schema: {type: string}
+      - name: invoiceId
+        in: path
+        required: true
+        schema: {type: string}
+    post:
+      operationId: adminDiscountBillingInvoice
+      tags: [admin-billing]
+      summary: Apply an admin discount and replace an invoice revision
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AdminInvoiceDiscountRequest'}
+      responses:
+        '200':
+          description: Discount applied and replacement invoice created.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminInvoiceDiscountResponse'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {description: Invoice state changed or discount conflict.}
         '502': {description: Billing service unavailable.}
   /v1/admin/orgs/{orgId}/billing/overrides:
     parameters:
@@ -3184,21 +3972,45 @@ paths:
       tags: [knowledgebases]
       summary: List knowledge bases
       description: |
-        Default response is a JSON array. When `cursor` is supplied the service may return a paginated envelope instead.
+        Default response is a JSON array. When `cursor` or any filter/sort control
+        is supplied, the service returns a paginated envelope.
       parameters:
         - $ref: '#/components/parameters/Limit'
         - name: cursor
           in: query
           schema: {type: string}
+        - name: q
+          in: query
+          description: Substring match on name and description.
+          schema: {type: string, maxLength: 256}
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [active, indexing, error]
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [created_at]
+            default: created_at
+        - name: order
+          in: query
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: desc
       responses:
         '200':
           description: Knowledge bases.
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/KnowledgeBase'
+                oneOf:
+                  - type: array
+                    items:
+                      $ref: '#/components/schemas/KnowledgeBase'
+                  - $ref: '#/components/schemas/KnowledgeBaseListResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -3555,6 +4367,40 @@ paths:
       responses:
         '204':
           description: Deleted.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/{workspaceId}/knowledgebases/{kbId}/documents/{docId}/media:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/KbId'
+      - $ref: '#/components/parameters/DocId'
+
+    get:
+      operationId: getKnowledgebaseDocumentMedia
+      tags: [knowledgebases]
+      summary: Mint a fresh playable URL for document media
+      parameters:
+        - name: index
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          description: Segment index (0 for images and whole videos).
+      responses:
+        '200':
+          description: Fresh playable URL
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentMedia'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -4451,6 +5297,10 @@ paths:
       operationId: listMyInvitations
       tags: [invitations]
       summary: List invitations for the authenticated user
+      description: >-
+        Requires a signed-in user session with a verified email. API keys,
+        builder-session tokens, anonymous sessions and accounts without a
+        verified email get 403.
       responses:
         '200':
           description: OK
@@ -4470,6 +5320,11 @@ paths:
       operationId: acceptInvitation
       tags: [invitations]
       summary: Accept an invitation
+      description: >-
+        Requires a signed-in user session whose verified email matches the
+        invitation (case-insensitive). API keys, builder-session tokens,
+        anonymous sessions and accounts without a verified email get 403; a
+        mismatched email gets 404. Decline applies the same rule.
       parameters:
         - name: token
           in: path
@@ -4594,6 +5449,8 @@ paths:
       operationId: listBlueprints
       tags: [blueprints]
       summary: List public workflow blueprints
+      # Public: isPublicBlueprintCatalogPath in internal/middleware/auth.go.
+      security: []
       responses:
         '200':
           description: OK
@@ -4613,6 +5470,8 @@ paths:
       operationId: getBlueprint
       tags: [blueprints]
       summary: Get a blueprint
+      # Public: isPublicBlueprintCatalogPath in internal/middleware/auth.go.
+      security: []
       parameters:
         - name: blueprintId
           in: path
@@ -5499,6 +6358,16 @@ components:
       description: |
         Workspace-scoped API key issued in the Graphn dashboard. Format:
         `Authorization: Bearer gn_...`.
+    GoogleOIDC:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Google-signed OIDC token issued for the Pub/Sub push subscription.
+    InternalJWT:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: GraphN service-to-service JWT. Not accepted from end users.
 
   parameters:
     WorkspaceId:
@@ -5540,6 +6409,15 @@ components:
         type: string
         pattern: '^[a-zA-Z0-9_-]+$'
       example: sec_01HABCXYZ
+    ConnectionId:
+      name: connectionId
+      in: path
+      required: true
+      description: Connection identifier.
+      schema:
+        type: string
+        pattern: '^conn_[a-zA-Z0-9_-]+$'
+      example: conn_01HABCXYZ
     Limit:
       name: limit
       in: query
@@ -5734,6 +6612,15 @@ components:
           example:
             code: AF_ERROR
             message: upstream execution engine unavailable
+    ServiceUnavailable:
+      description: Required provider or service configuration is unavailable.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: SERVICE_NOT_CONFIGURED
+            message: connection provider is not configured
 
   schemas:
     BillingAccount:
@@ -5783,14 +6670,41 @@ components:
         isDefault: {type: boolean}
     Invoice:
       type: object
-      required: [id, number, status, amountDue, currency, created, periodStart, periodEnd]
+      required: [id, number, status, currency, created, periodStart, periodEnd]
       properties:
-        id: {type: string}
-        number: {type: string}
+        id:
+          type: string
+          description: >-
+            Statement identity key (`periodStart`, RFC3339). This stays
+            statement-scoped even when the row is covered by Stripe invoice
+            lifecycle metadata; use `invoiceId` for Stripe identity.
+        number:
+          type: string
+          description: >-
+            Statement display number (`STM-YYYYMMDD`) derived from
+            `periodStart`. It no longer switches to `INV-*` on invoiced rows.
+        invoiceId:
+          type: string
+          description: >-
+            Optional Stripe invoice id for statement rows that are covered by
+            an invoice lifecycle record.
+        detailKind:
+          type: string
+          description: >-
+            Optional invoice-detail source marker (`statement`,
+            `invoice_close`, or `invoice_overlay`) for clients that need to
+            distinguish statement-native rows from Stripe-backed overlays.
         status:
           type: string
-          enum: [closed, current]
-        amountDue: {type: integer, format: int64}
+          enum: [closed, current, reserved, open, mismatch, voiding, void, paid, failed, stale]
+        amountDue:
+          type: integer
+          format: int64
+          description: >-
+            Compatibility field for legacy invoice clients. For prepaid
+            statements this is max(-closingCents, 0), not a collections balance
+            with payment terms. It is omitted when statement figures could not
+            be read; an explicit 0 means the amount due is known to be zero.
         currency: {type: string}
         created: {type: integer, format: int64}
         periodStart: {type: string, format: date-time}
@@ -5798,10 +6712,48 @@ components:
         openingCents: {type: integer, format: int64}
         usageCents: {type: integer, format: int64}
         creditsCents: {type: integer, format: int64}
+        creditedCents: {type: integer, format: int64}
+        debitedCents: {type: integer, format: int64}
         closingCents: {type: integer, format: int64}
-        hostedInvoiceUrl: {type: string}
+        amountTotalCents:
+          type: integer
+          format: int64
+          description: >-
+            Stripe invoice face value when available. Distinct from `amountDue`
+            compatibility semantics on prepaid statements.
+        revision: {type: integer}
+        inputFingerprint:
+          type: string
+          description: >-
+            Exact immutable statement input fingerprint. Omitted when billing-cp
+            could not read the underlying statement object.
+        invoiceAmountDueCents:
+          type: integer
+          format: int64
+          description: >-
+            Authoritative invoice-level amount from invoice metadata. Distinct
+            from per-statement amountDue and omitted when unavailable.
+        usageByDay:
+          type: array
+          items: {$ref: '#/components/schemas/UsageDay'}
+        hostedInvoiceUrl:
+          type: string
+          description: >-
+            Stripe-hosted invoice page URL. Statement-backed responses leave
+            this empty.
         invoicePdf: {type: string}
-        invoiceDocumentUrl: {type: string}
+        invoicePreviewUrl:
+          type: string
+          description: >-
+            Inline-renderable statement URL. For statement rows this is a
+            separately signed URL with inline content disposition; it may be
+            empty when no preview artifact exists.
+    UsageDay:
+      type: object
+      required: [date, amountCents]
+      properties:
+        date: {type: string, format: date}
+        amountCents: {type: integer, format: int64}
     FreeGrantResult:
       type: object
       required: [balanceCents, balanceStatus, alreadyClaimed]
@@ -5863,6 +6815,8 @@ components:
         customModelsDisabled: {type: boolean}
         allowNegativeBalance: {type: boolean}
         negativeLimitCents: {type: integer, format: int64}
+        reserveEstCents: {type: integer, format: int64, nullable: true}
+        reserveEstCentsDefault: {type: integer, format: int64}
     AdminBillingOverrides:
       type: object
       required: [comment]
@@ -5870,6 +6824,7 @@ components:
         customModelsDisabled: {type: boolean}
         allowNegativeBalance: {type: boolean}
         negativeLimitCents: {type: integer, format: int64}
+        reserveEstCents: {type: integer, format: int64, nullable: true}
         hasPurchased: {type: boolean}
         comment: {type: string, minLength: 1, maxLength: 2000}
     AdminBillingGrantRequest:
@@ -5879,6 +6834,211 @@ components:
         amountCents: {type: integer, format: int64}
         comment: {type: string, minLength: 1, maxLength: 2000}
         idempotencyKey: {type: string}
+    AdminInvoicesResponse:
+      type: object
+      required: [invoices]
+      properties:
+        invoices:
+          type: array
+          items: {$ref: '#/components/schemas/Invoice'}
+        emptyReason:
+          type: string
+          enum: [no_billing_history, statements_not_generated_yet]
+    AdminInvoiceResponse:
+      type: object
+      required: [invoice]
+      properties:
+        invoice: {$ref: '#/components/schemas/Invoice'}
+    AdminInvoicePreviewRequest:
+      type: object
+      properties:
+        from: {type: string, format: date-time}
+        to: {type: string, format: date-time}
+      description: from and to must both be set or both omitted.
+    AdminInvoiceCreateRequest:
+      type: object
+      required: [from, to, manifestSha256, comment]
+      properties:
+        from: {type: string, format: date-time}
+        to: {type: string, format: date-time}
+        manifestSha256: {type: string, minLength: 1}
+        comment: {type: string, minLength: 1, maxLength: 2000}
+    AdminInvoiceRecordPaymentRequest:
+      type: object
+      required: [checksum, comment]
+      properties:
+        checksum: {type: string, minLength: 1}
+        comment: {type: string, minLength: 1, maxLength: 2000}
+    AdminInvoiceVoidRequest:
+      type: object
+      required: [from, to, comment]
+      properties:
+        from: {type: string, format: date-time}
+        to: {type: string, format: date-time}
+        comment: {type: string, minLength: 1, maxLength: 2000}
+    AdminInvoiceDiscountRequest:
+      type: object
+      additionalProperties: false
+      required: [from, to, expectedRevision, type, value, reason, comment]
+      properties:
+        from: {type: string, format: date-time}
+        to: {type: string, format: date-time}
+        expectedRevision: {type: integer, minimum: 0}
+        idempotencyKey: {type: string}
+        type:
+          type: string
+          enum: [fixed_amount_cents, percentage]
+        value:
+          type: integer
+          format: int64
+          description: |
+            Discount input value. For percentage discounts this is basis points
+            (1..9999 = 0.01%..99.99%). For fixed_amount_cents this is cents.
+        reason: {type: string, minLength: 1}
+        comment: {type: string, minLength: 1, maxLength: 2000}
+    AdminInvoiceStatementRef:
+      type: object
+      required: [periodStart, periodEnd, revision, inputFingerprint]
+      properties:
+        periodStart: {type: string, format: date-time}
+        periodEnd: {type: string, format: date-time}
+        revision: {type: integer}
+        inputFingerprint: {type: string}
+    AdminInvoiceQuoteLineItem:
+      type: object
+      required: [description, amountCents]
+      properties:
+        description: {type: string}
+        amountCents: {type: integer, format: int64}
+    AdminInvoiceQuote:
+      type: object
+      required: [orgId, customerId, period, amountCents, lineItems]
+      properties:
+        orgId: {type: string}
+        customerId: {type: string}
+        period: {type: string}
+        amountCents: {type: integer, format: int64}
+        lineItems:
+          type: array
+          items: {$ref: '#/components/schemas/AdminInvoiceQuoteLineItem'}
+    AdminInvoicePreviewResponse:
+      type: object
+      required: [periodStart, periodEnd, statementRefs, manifestSha256, quote]
+      properties:
+        periodStart: {type: string, format: date-time}
+        periodEnd: {type: string, format: date-time}
+        statementRefs:
+          type: array
+          items: {$ref: '#/components/schemas/AdminInvoiceStatementRef'}
+        manifestSha256: {type: string}
+        quote: {$ref: '#/components/schemas/AdminInvoiceQuote'}
+    AdminInvoiceCreateResponse:
+      allOf:
+        - $ref: '#/components/schemas/AdminInvoicePreviewResponse'
+        - type: object
+          required: [invoiceId, invoiceStatus, amountDueCents]
+          properties:
+            invoiceId: {type: string}
+            invoiceStatus: {type: string}
+            amountDueCents: {type: integer, format: int64}
+            hostedInvoiceUrl: {type: string}
+    AdminInvoicePaymentPreviewResponse:
+      type: object
+      required:
+        [orgId, invoiceId, stripeCustomerId, currency, invoiceTotalCents, invoiceAmountPaidCents, overlayPeriodStart, overlayPeriodEnd, overlayExpectedAmountCents, idempotencyKey, alreadyRecorded, recordedSequence, checksum]
+      properties:
+        orgId: {type: string}
+        invoiceId: {type: string}
+        stripeCustomerId: {type: string}
+        currency: {type: string}
+        invoiceTotalCents: {type: integer, format: int64}
+        invoiceAmountPaidCents: {type: integer, format: int64}
+        overlayPeriodStart: {type: string, format: date-time}
+        overlayPeriodEnd: {type: string, format: date-time}
+        overlayExpectedAmountCents: {type: integer, format: int64}
+        idempotencyKey: {type: string}
+        alreadyRecorded: {type: boolean}
+        recordedSequence: {type: integer, format: int64}
+        checksum: {type: string}
+    AdminInvoiceRecordPaymentResponse:
+      type: object
+      required:
+        [orgId, invoiceId, idempotencyKey, alreadyRecorded, journalSequence, projectionStatus, balanceProjectionPending]
+      properties:
+        orgId: {type: string}
+        invoiceId: {type: string}
+        idempotencyKey: {type: string}
+        alreadyRecorded: {type: boolean}
+        journalSequence: {type: integer, format: int64}
+        projectionStatus: {type: string}
+        balanceProjectionPending: {type: boolean}
+    AdminInvoiceVoidResponse:
+      type: object
+      required: [orgId, periodStart, periodEnd, invoiceId, invoiceStatus, amountDueCents]
+      properties:
+        orgId: {type: string}
+        periodStart: {type: string, format: date-time}
+        periodEnd: {type: string, format: date-time}
+        invoiceId: {type: string}
+        invoiceStatus: {type: string}
+        amountDueCents: {type: integer, format: int64}
+        hostedInvoiceUrl: {type: string}
+    AdminInvoiceDiscount:
+      type: object
+      required: [type, inputValue, discountCents, reason, actor, idempotencyKey, status, originalAmountCents, adjustedAmountCents]
+      properties:
+        type: {type: string}
+        inputValue: {type: integer, format: int64}
+        discountCents: {type: integer, format: int64}
+        reason: {type: string}
+        actor: {type: string}
+        idempotencyKey: {type: string}
+        providerSourceId: {type: string}
+        providerResultId: {type: string}
+        status: {type: string}
+        appliedAt: {type: string, format: date-time}
+        originalAmountCents: {type: integer, format: int64}
+        adjustedAmountCents: {type: integer, format: int64}
+    AdminInvoiceDiscountResponse:
+      type: object
+      required: [orgId, periodStart, periodEnd, invoiceId, invoiceStatus, revision, rootInvoiceId, originalAmountCents, adjustedAmountCents, discount]
+      properties:
+        orgId: {type: string}
+        periodStart: {type: string, format: date-time}
+        periodEnd: {type: string, format: date-time}
+        invoiceId: {type: string}
+        invoiceStatus: {type: string}
+        revision: {type: integer}
+        rootInvoiceId: {type: string}
+        supersedesInvoiceId: {type: string}
+        originalAmountCents: {type: integer, format: int64}
+        adjustedAmountCents: {type: integer, format: int64}
+        hostedInvoiceUrl: {type: string}
+        discount: {$ref: '#/components/schemas/AdminInvoiceDiscount'}
+    AdminInvoiceRevision:
+      type: object
+      required: [revision, invoiceId, status, rootInvoiceId, originalAmountCents, adjustedAmountCents, createdAt]
+      properties:
+        revision: {type: integer}
+        invoiceId: {type: string}
+        status: {type: string}
+        rootInvoiceId: {type: string}
+        supersedesInvoiceId: {type: string}
+        originalAmountCents: {type: integer, format: int64}
+        adjustedAmountCents: {type: integer, format: int64}
+        createdAt: {type: string, format: date-time}
+        statusUpdatedAt: {type: string, format: date-time}
+        discount: {$ref: '#/components/schemas/AdminInvoiceDiscount'}
+    AdminInvoiceRevisionsResponse:
+      type: object
+      required: [orgId, periodStart, periodEnd, revisions]
+      properties:
+        orgId: {type: string}
+        periodStart: {type: string, format: date-time}
+        periodEnd: {type: string, format: date-time}
+        revisions:
+          type: array
+          items: {$ref: '#/components/schemas/AdminInvoiceRevision'}
 
     Error:
       type: object
@@ -5932,6 +7092,545 @@ components:
         - `ready`: at least one replica is serving (or scaled to zero with cooldown)
         - `failed`: deployment failed; see `error_message`
         - `deleting`: teardown in progress
+
+    InferenceRouterCandidate:
+      type: object
+      required: [target, lanes, weight, order]
+      additionalProperties: false
+      properties:
+        target:
+          type: string
+          description: Unprefixed built-in alias or `custom:cm_...` logical reference.
+          pattern: '^(?:[a-z0-9][a-z0-9._-]{0,127}|custom:cm_[0-9a-f]{12})$'
+        lanes:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: string
+            pattern: '^(?:general|code|quantitative|vision|audio|contract|long_context|custom:lane_[0-9a-f]{12})$'
+        weight:
+          type: integer
+          minimum: 1
+          maximum: 100
+        order:
+          type: integer
+          minimum: 0
+
+    InferenceRouterConfig:
+      type: object
+      required: [preset, candidates]
+      additionalProperties: false
+      properties:
+        preset:
+          type: string
+          enum: [balanced]
+        candidates:
+          type: array
+          minItems: 1
+          maxItems: 8
+          items:
+            $ref: '#/components/schemas/InferenceRouterCandidate'
+        fallback_policy:
+          type: string
+          enum: [fail_closed, degraded_general]
+          default: fail_closed
+          description: >-
+            What callers get when no shard can classify the request.
+            `degraded_general` serves the highest-weight general candidate
+            without classification, trading routing quality for availability.
+
+    PublishedRouterCandidate:
+      type: object
+      required:
+        - reference
+        - target
+        - lanes
+        - weight
+        - order
+        - capabilities
+        - context_window
+        - context_length
+        - quality_score
+        - prompt_per_1m
+        - completion_per_1m
+      properties:
+        reference:
+          type: string
+        target:
+          type: string
+        lanes:
+          type: array
+          items:
+            type: string
+            pattern: '^(?:general|code|quantitative|vision|audio|contract|long_context|custom:lane_[0-9a-f]{12})$'
+        weight:
+          type: integer
+        order:
+          type: integer
+        capabilities:
+          type: array
+          items:
+            type: string
+        context_window:
+          type: integer
+          minimum: 1
+        context_length:
+          type: integer
+          minimum: 1
+        quality_score:
+          type: number
+          minimum: 0
+          maximum: 1
+        prompt_per_1m:
+          type: number
+          minimum: 0
+        completion_per_1m:
+          type: number
+          minimum: 0
+
+    PublishedRouterDecision:
+      type: object
+      required: [name, lane, candidate_refs, priority]
+      properties:
+        name:
+          type: string
+        lane:
+          type: string
+          pattern: '^(?:code|quantitative|vision|audio|contract|long_context|custom:lane_[0-9a-f]{12})$'
+        constraints:
+          type: array
+          items:
+            type: string
+            pattern: '^(?:code|quantitative|vision|audio|contract|long_context|custom:lane_[0-9a-f]{12})$'
+        candidate_refs:
+          type: array
+          items:
+            type: string
+        priority:
+          type: integer
+
+    PublishedRouterRevision:
+      type: object
+      required:
+        - router_id
+        - revision
+        - state
+        - candidates
+        - decisions
+        - general_candidate_refs
+        - manifest_hash
+      properties:
+        router_id:
+          type: string
+        revision:
+          type: string
+        state:
+          type: string
+          enum: [active, staged]
+        preferred_shard_id:
+          type: string
+          description: Operator-owned placement hint; populated only for Platform Auto.
+        candidates:
+          type: array
+          maxItems: 8
+          items:
+            $ref: '#/components/schemas/PublishedRouterCandidate'
+        decisions:
+          type: array
+          items:
+            $ref: '#/components/schemas/PublishedRouterDecision'
+        general_candidate_refs:
+          type: array
+          items:
+            type: string
+        manifest_hash:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+        custom_lanes:
+          type: array
+          description: Snapshot of every workspace custom lane the revision uses.
+          items:
+            $ref: '#/components/schemas/PublishedRouterCustomLane'
+
+    PublishedRouterCustomLane:
+      type: object
+      required: [reference, match, phrases]
+      properties:
+        reference:
+          type: string
+          pattern: '^custom:lane_[0-9a-f]{12}$'
+        match:
+          type: string
+          enum: [any, all]
+        phrases:
+          type: array
+          items:
+            type: string
+
+    InferenceRouterLaneCreate:
+      type: object
+      required: [display_name, phrases]
+      additionalProperties: false
+      properties:
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 64
+        description:
+          type: string
+          maxLength: 280
+        match:
+          type: string
+          enum: [any, all]
+          default: any
+          description: '`any` matches when one phrase appears; `all` requires every phrase.'
+        phrases:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items:
+            type: string
+            minLength: 1
+            maxLength: 64
+
+    InferenceRouterLaneUpdate:
+      type: object
+      required: [expected_version]
+      additionalProperties: false
+      properties:
+        expected_version:
+          type: integer
+          minimum: 1
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 64
+        description:
+          type: string
+          maxLength: 280
+        match:
+          type: string
+          enum: [any, all]
+        phrases:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items:
+            type: string
+            minLength: 1
+            maxLength: 64
+
+    InferenceRouterLane:
+      type: object
+      required: [id, reference, display_name, match, phrases, version, used_by, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          pattern: '^lane_[0-9a-f]{12}$'
+        reference:
+          type: string
+          description: The value to put in a router candidate's `lanes`.
+          pattern: '^custom:lane_[0-9a-f]{12}$'
+        display_name:
+          type: string
+        description:
+          type: string
+        match:
+          type: string
+          enum: [any, all]
+        phrases:
+          type: array
+          items:
+            type: string
+        version:
+          type: integer
+          minimum: 1
+        used_by:
+          type: array
+          description: >-
+            IDs of routers whose draft, pending, active, or draining revision
+            references this lane. A previous revision keeps draining from its
+            shard for a while after a newer one activates, so a router can stay
+            listed (and DELETE can stay 409) after its current revisions have
+            dropped the lane.
+          items:
+            type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    InferenceRouterLaneList:
+      type: object
+      required: [items, total]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/InferenceRouterLane'
+        total:
+          type: integer
+
+    InferenceRouterRevision:
+      type: object
+      required: [number, status, config, manifest_hash, created_at, updated_at]
+      properties:
+        number:
+          type: integer
+          minimum: 1
+        status:
+          type: string
+          enum: [draft, pending, active, failed]
+        config:
+          $ref: '#/components/schemas/InferenceRouterConfig'
+        manifest_hash:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+        shard_placements:
+          type: array
+          description: >-
+            Shards carrying this revision. A revision has one `primary`
+            placement; a second `migrating` placement exists only while the
+            revision is being moved to another shard.
+          items:
+            type: object
+            required: [shard_id, alias, role, state]
+            properties:
+              shard_id:
+                type: string
+              alias:
+                type: string
+              role:
+                type: string
+                enum: [primary, migrating]
+              state:
+                type: string
+                enum: [assigned, active, draining]
+        custom_lanes:
+          type: array
+          description: >-
+            The custom lane definitions this revision was saved with. Compare
+            against the current lanes to tell when a router needs republishing.
+          items:
+            $ref: '#/components/schemas/PublishedRouterCustomLane'
+        error_message:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    InferenceRouter:
+      type: object
+      required: [id, name, display_name, scope, status, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          description: "`ir_...` for workspace routers; `auto` for the immutable platform adapter."
+        workspace_id:
+          type: string
+        owner_id:
+          type: string
+        name:
+          type: string
+        display_name:
+          type: string
+        scope:
+          type: string
+          enum: [workspace, platform]
+        status:
+          type: string
+          enum: [draft, pending, active, failed, deleting, deleted]
+        draft_revision:
+          allOf:
+            - $ref: '#/components/schemas/InferenceRouterRevision'
+          nullable: true
+        pending_revision:
+          allOf:
+            - $ref: '#/components/schemas/InferenceRouterRevision'
+          nullable: true
+        active_revision:
+          allOf:
+            - $ref: '#/components/schemas/InferenceRouterRevision'
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    InferenceRouterCreate:
+      type: object
+      additionalProperties: false
+      required: [name, preset, candidates]
+      properties:
+        name:
+          type: string
+          pattern: '^[a-zA-Z0-9][a-zA-Z0-9_-]*$'
+          maxLength: 100
+        display_name:
+          type: string
+        preset:
+          type: string
+          enum: [balanced]
+        candidates:
+          type: array
+          minItems: 1
+          maxItems: 8
+          items:
+            $ref: '#/components/schemas/InferenceRouterCandidate'
+        fallback_policy:
+          type: string
+          enum: [fail_closed, degraded_general]
+          default: fail_closed
+
+    InferenceRouterUpdate:
+      type: object
+      additionalProperties: false
+      required: [expected_revision]
+      properties:
+        expected_revision:
+          type: integer
+          minimum: 1
+        display_name:
+          type: string
+        preset:
+          type: string
+          enum: [balanced]
+        candidates:
+          type: array
+          minItems: 1
+          maxItems: 8
+          items:
+            $ref: '#/components/schemas/InferenceRouterCandidate'
+        fallback_policy:
+          type: string
+          enum: [fail_closed, degraded_general]
+
+    InferenceRouterValidation:
+      type: object
+      required: [valid, manifest, manifest_hash]
+      properties:
+        valid:
+          type: boolean
+        manifest:
+          type: string
+        manifest_hash:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+
+    InferenceRouterList:
+      type: object
+      required: [items, total]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/InferenceRouter'
+        total:
+          type: integer
+        continue_token:
+          type: string
+
+    InferenceRouterAnalyticsMetrics:
+      type: object
+      required:
+        [requests, input_tokens, output_tokens, total_tokens, success_count,
+         error_count, duration_ms_sum, average_latency_ms, estimated_cost,
+         shared_candidate_gpu_seconds]
+      properties:
+        requests: { type: integer, format: int64 }
+        input_tokens: { type: number, format: double }
+        output_tokens: { type: number, format: double }
+        total_tokens: { type: number, format: double }
+        success_count: { type: integer, format: int64 }
+        error_count: { type: integer, format: int64 }
+        duration_ms_sum: { type: number, format: double }
+        average_latency_ms: { type: number, format: double }
+        approximate_p50_latency_ms: { type: number, format: double, nullable: true }
+        approximate_p95_latency_ms: { type: number, format: double, nullable: true }
+        estimated_cost:
+          type: number
+          format: double
+          nullable: true
+          description: Sum of event-provided estimated_cost_usd; no local rates are applied.
+        shared_candidate_gpu_seconds:
+          type: number
+          nullable: true
+          format: double
+          description: Shared runtime for historically selected custom models, not router-attributed cost.
+
+    InferenceRouterAnalyticsPoint:
+      type: object
+      required: [timestamp, metrics]
+      properties:
+        timestamp: { type: string, format: date-time }
+        metrics: { $ref: '#/components/schemas/InferenceRouterAnalyticsMetrics' }
+
+    InferenceRouterAnalyticsBreakdown:
+      type: object
+      required: [key, metrics]
+      properties:
+        key: { type: string }
+        model_ref: { type: string }
+        model_source: { type: string }
+        metrics: { $ref: '#/components/schemas/InferenceRouterAnalyticsMetrics' }
+
+    InferenceRouterAnalytics:
+      type: object
+      required:
+        [router_id, interval, summary, time_series, model_breakdown,
+         decision_breakdown, status_breakdown, shard_breakdown,
+         shared_candidate_runtime_status,
+         shared_candidate_runtime_refs_total, shared_candidate_runtime_refs_included,
+         coverage_from, coverage_through, complete]
+      properties:
+        router_id: { type: string }
+        interval: { type: string, enum: [hour, day] }
+        summary: { $ref: '#/components/schemas/InferenceRouterAnalyticsMetrics' }
+        time_series:
+          type: array
+          items: { $ref: '#/components/schemas/InferenceRouterAnalyticsPoint' }
+        model_breakdown:
+          type: array
+          items: { $ref: '#/components/schemas/InferenceRouterAnalyticsBreakdown' }
+        decision_breakdown:
+          type: array
+          items: { $ref: '#/components/schemas/InferenceRouterAnalyticsBreakdown' }
+        status_breakdown:
+          type: array
+          items: { $ref: '#/components/schemas/InferenceRouterAnalyticsBreakdown' }
+        shard_breakdown:
+          type: array
+          description: >-
+            Requests attributed to the shard that served them, which differs
+            from the router's primary placement after a failover or during a
+            shard migration.
+          items: { $ref: '#/components/schemas/InferenceRouterAnalyticsBreakdown' }
+        shared_candidate_runtime_status:
+          type: string
+          enum: [complete, degraded, not_applicable]
+        shared_candidate_runtime_refs_total: { type: integer }
+        shared_candidate_runtime_refs_included: { type: integer }
+        coverage_from:
+          type: string
+          format: date-time
+          nullable: true
+          description: Earliest complete analytics bucket available from DynamoDB.
+        coverage_through:
+          type: string
+          format: date-time
+          nullable: true
+          description: Exclusive end of complete analytics buckets proven by the ingestion frontier.
+        complete:
+          type: boolean
+          description: True only when the requested range is fully inside analytics coverage.
 
     CustomModel:
       type: object
@@ -6052,7 +7751,7 @@ components:
         max_replicas:
           type: integer
           minimum: 1
-          maximum: 3
+          maximum: 8
           description: Maximum replicas the autoscaler may run.
         cooldown_seconds:
           type: integer
@@ -6178,7 +7877,7 @@ components:
         max_replicas:
           type: integer
           minimum: 1
-          maximum: 3
+          maximum: 8
           default: 1
         cooldown_seconds:
           type: integer
@@ -6230,7 +7929,7 @@ components:
         min_replicas:
           type: integer
           minimum: 0
-          maximum: 5
+          maximum: 3
           description: |
             New floor for the autoscaler. `0` re-enables scale-to-zero;
             any value `>= 1` keeps the model warm. Applied to the live
@@ -6238,7 +7937,7 @@ components:
         max_replicas:
           type: integer
           minimum: 1
-          maximum: 5
+          maximum: 8
           description: |
             New ceiling for the autoscaler. KServe propagates the value
             to the underlying KEDA `ScaledObject`'s `maxReplicaCount` on
@@ -6542,6 +8241,212 @@ components:
           description: Number of items in this page.
         continue_token:
           type: string
+
+    ConnectionCreate:
+      type: object
+      additionalProperties: false
+      required: [name, kind, provider_id]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        kind:
+          type: string
+          enum: [native, mcp]
+        provider_id:
+          type: string
+          pattern: '^[a-zA-Z][a-zA-Z0-9_-]*$'
+          maxLength: 64
+        resource_id:
+          type: string
+          description: Optional linked MCP resource ID.
+
+    Connection:
+      type: object
+      additionalProperties: false
+      description: |
+        Workspace-owned authorization metadata. OAuth client secrets, access
+        tokens, refresh tokens, PKCE data, and account hashes are never returned.
+      required:
+        - id
+        - workspace_id
+        - name
+        - kind
+        - provider_id
+        - status
+        - granted_capabilities
+        - granted_scopes
+        - watch_status
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          pattern: '^conn_[a-zA-Z0-9_-]+$'
+        workspace_id:
+          type: string
+        name:
+          type: string
+        kind:
+          type: string
+          enum: [native, mcp]
+        provider_id:
+          type: string
+        resource_id:
+          type: string
+        status:
+          type: string
+          enum: [pending, active, needs_reauth, revoked, error]
+        account_label:
+          type: string
+        account_metadata:
+          type: object
+          additionalProperties:
+            type: string
+        granted_capabilities:
+          type: array
+          items: { type: string }
+        granted_scopes:
+          type: array
+          items: { type: string }
+        credential_expires_at:
+          type: string
+          format: date-time
+        last_validated_at:
+          type: string
+          format: date-time
+        last_error_code:
+          type: string
+        last_error_message:
+          type: string
+        watch_status:
+          type: string
+          enum: [disabled, pending, active, error]
+        watch_expires_at:
+          type: string
+          format: date-time
+        last_event_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    ConnectionList:
+      type: object
+      additionalProperties: false
+      required: [items, count]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Connection' }
+        count:
+          type: integer
+        continue_token:
+          type: string
+
+    ConnectionAuthorizationStart:
+      type: object
+      additionalProperties: false
+      properties:
+        return_path:
+          type: string
+          default: /settings/connections
+          description: Relative path on the configured GraphN web origin.
+        requested_capabilities:
+          type: array
+          items: { type: string }
+
+    ConnectionAuthorizationChallenge:
+      type: object
+      additionalProperties: false
+      required: [authorization_url, expires_at]
+      properties:
+        authorization_url:
+          type: string
+          format: uri
+        expires_at:
+          type: string
+          format: date-time
+
+    ManagedConnectionToolCall:
+      type: object
+      additionalProperties: false
+      required: [resource_id, version_id, arguments]
+      properties:
+        resource_id:
+          type: string
+          pattern: '^mcp_[a-zA-Z0-9_-]+$'
+        version_id:
+          type: string
+          pattern: '^rv_[a-zA-Z0-9_-]+$'
+        arguments:
+          type: object
+          additionalProperties: true
+
+    ManagedConnectionToolResult:
+      type: object
+      additionalProperties: false
+      required: [success]
+      properties:
+        success:
+          type: boolean
+        output: {}
+
+    IntegrationCapability:
+      type: object
+      additionalProperties: false
+      required: [id, display_name]
+      properties:
+        id: { type: string }
+        display_name: { type: string }
+        description: { type: string }
+
+    IntegrationEvent:
+      type: object
+      additionalProperties: false
+      required: [id, display_name]
+      properties:
+        id: { type: string }
+        display_name: { type: string }
+        description: { type: string }
+        capability: { type: string }
+
+    Integration:
+      type: object
+      additionalProperties: false
+      required: [id, display_name, kind, auth_mode, capabilities, events]
+      properties:
+        id: { type: string }
+        display_name: { type: string }
+        description: { type: string }
+        kind:
+          type: string
+          enum: [native, mcp]
+        auth_mode:
+          type: string
+          enum: [oauth2]
+        capabilities:
+          type: array
+          items: { $ref: '#/components/schemas/IntegrationCapability' }
+        events:
+          type: array
+          items: { $ref: '#/components/schemas/IntegrationEvent' }
+
+    IntegrationList:
+      type: object
+      additionalProperties: false
+      required: [items, count]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Integration' }
+        count:
+          type: integer
 
     ChatMessage:
       type: object
@@ -7033,7 +8938,9 @@ components:
       type: object
       additionalProperties: true
       properties:
-        type: {type: string}
+        type:
+          type: string
+          enum: [hosted, remote, managed]
         files:
           type: object
           additionalProperties: {type: string}
@@ -7041,6 +8948,18 @@ components:
         secrets:
           type: object
           additionalProperties: {type: string}
+        provider_id:
+          type: string
+          readOnly: true
+        connection_id:
+          type: string
+          readOnly: true
+        tool_capabilities:
+          type: object
+          readOnly: true
+          additionalProperties:
+            type: array
+            items: {type: string}
 
     ToolDefinition:
       type: object
@@ -7083,7 +9002,9 @@ components:
       required: [name]
       properties:
         name: {type: string}
-        type: {type: string}
+        type:
+          type: string
+          enum: [hosted, remote]
         files:
           type: object
           additionalProperties: {type: string}
@@ -7400,6 +9321,8 @@ components:
         cron_schedule: {type: string}
         input: {type: object, additionalProperties: true}
         enabled: {type: boolean}
+        connection_id: {type: string}
+        event_type: {type: string}
         temporal_schedule_id: {type: string}
         schedule_synced: {type: boolean}
         schedule_status: {type: string}
@@ -7417,13 +9340,15 @@ components:
     TriggerCreate:
       type: object
       additionalProperties: false
-      required: [name, workflow_id, cron_schedule]
+      required: [name, workflow_id]
       properties:
         name: {type: string}
         workflow_id: {type: string}
         cron_schedule: {type: string}
         input: {type: object, additionalProperties: true}
         enabled: {type: boolean}
+        connection_id: {type: string}
+        event_type: {type: string}
         webhook_auth: {type: string}
         hmac_secret_id: {type: string}
         hmac_algorithm: {type: string}
@@ -7433,12 +9358,14 @@ components:
     TriggerCreateNested:
       type: object
       additionalProperties: false
-      required: [name, cron_schedule]
+      required: [name]
       properties:
         name: {type: string}
         cron_schedule: {type: string}
         input: {type: object, additionalProperties: true}
         enabled: {type: boolean}
+        connection_id: {type: string}
+        event_type: {type: string}
         webhook_auth: {type: string}
         hmac_secret_id: {type: string}
         hmac_algorithm: {type: string}
@@ -7453,11 +9380,30 @@ components:
         cron_schedule: {type: string}
         input: {type: object, additionalProperties: true}
         enabled: {type: boolean}
+        connection_id: {type: string}
+        event_type: {type: string}
         webhook_auth: {type: string}
         hmac_secret_id: {type: string}
         hmac_algorithm: {type: string}
         hmac_signature_header: {type: string}
         webhook_signature_scheme: {type: string}
+
+    GooglePubSubEnvelope:
+      type: object
+      additionalProperties: true
+      required: [message, subscription]
+      properties:
+        subscription: {type: string}
+        message:
+          type: object
+          additionalProperties: true
+          required: [data, messageId]
+          properties:
+            data:
+              type: string
+              format: byte
+              description: Base64-encoded Gmail notification JSON.
+            messageId: {type: string}
 
     TriggerList:
       type: object
@@ -7555,6 +9501,21 @@ components:
         created_at: {type: string, format: date-time}
         updated_at: {type: string, format: date-time}
 
+    KnowledgeBaseListResponse:
+      type: object
+      additionalProperties: false
+      required: [items, has_more]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/KnowledgeBase'}
+        has_more: {type: boolean}
+        next_cursor: {type: string}
+        total:
+          type: integer
+          format: int64
+          description: Matching item count, returned on the first page.
+
     KnowledgeBaseCreate:
       type: object
       additionalProperties: false
@@ -7608,10 +9569,23 @@ components:
         document_type: {type: string}
         image_url: {type: string}
         video_url: {type: string}
+        expires_at: {type: string, format: date-time}
+        expires_in: {type: integer}
+        media_href: {type: string}
         segment_seconds: {type: integer}
         chunk_count: {type: integer}
         created_at: {type: string, format: date-time}
         metadata: {type: object, additionalProperties: true}
+
+    DocumentMedia:
+      type: object
+      additionalProperties: false
+      required: [url, expires_at, expires_in]
+      properties:
+        url: {type: string}
+        expires_at: {type: string, format: date-time}
+        expires_in: {type: integer}
+        content_type: {type: string}
 
     SearchRequest:
       type: object
@@ -7620,7 +9594,12 @@ components:
       properties:
         query: {type: string}
         top_k: {type: integer}
-        rerank: {type: boolean}
+        rerank:
+          type: boolean
+          description: |
+            Requests result reranking. When the vector top-K contains a video
+            hit, the batch remains in vector order and returned scores are
+            vector-similarity scores.
         reranker_model: {type: string}
         score_threshold: {type: number}
         metadata_filter: {type: object, additionalProperties: true}
@@ -7638,6 +9617,9 @@ components:
         document_type: {type: string}
         image_url: {type: string}
         video_url: {type: string}
+        expires_at: {type: string, format: date-time}
+        expires_in: {type: integer}
+        media_href: {type: string}
         segment_start_sec: {type: number}
         segment_end_sec: {type: number}
         metadata: {type: object, additionalProperties: true}
@@ -8120,10 +10102,27 @@ components:
     BlueprintDeployResponse:
       type: object
       additionalProperties: false
-      required: [workflow_id, name]
+      required: [workflow_id, name, resource_ids]
       properties:
         workflow_id: {type: string}
         name: {type: string}
+        resource_ids:
+          $ref: '#/components/schemas/BlueprintDeployResourceIDs'
+
+    BlueprintDeployResourceIDs:
+      type: object
+      additionalProperties: false
+      required: [agents, functions, mcp_servers]
+      properties:
+        agents:
+          type: array
+          items: {type: string}
+        functions:
+          type: array
+          items: {type: string}
+        mcp_servers:
+          type: array
+          items: {type: string}
 
     Storage:
       type: object

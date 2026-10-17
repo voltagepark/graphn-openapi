@@ -18,14 +18,211 @@ One PR. In the same PR that changes the spec:
    (and add a fresh empty `## [Unreleased]` above it for the next round).
 
 Merge to `main`. The `auto-tag` job in `release-openapi.yml` reads the new
-`info.version`, creates the matching `openapi/vX.Y.Z` tag, and the tag-push
-re-fires the workflow to mirror the spec to the public repo + cut a GitHub
-release. agent-foundry's `/api` Redoc page picks the new spec up
-automatically (it fetches `voltagepark/graphn-openapi@latest` via jsdelivr).
+`info.version` and creates `openapi/vX.Y.Z`. GitHub does not re-fire
+workflows from a `GITHUB_TOKEN` tag push, so the public mirror still needs
+**Actions → Release OpenAPI Spec → Run workflow** with `version=vX.Y.Z`
+(unless you push the tag with a PAT). That job mirrors to
+`voltagepark/graphn-openapi` and purges jsDelivr `@latest` so
+[graphn.ai/api](https://graphn.ai/api) does not keep the previous spec
+(jsDelivr caches that alias 12h at the edge / 7d in browsers).
 
-No manual tag, no second PR, no `web/public/openapi.yaml` to keep in sync.
+No `web/public/openapi.yaml` to keep in sync.
 
 ## [Unreleased]
+
+## [0.20.3] - 2026-10-15
+
+### Changed
+
+- Custom-model `max_replicas` now accepts values up to 8 on create and update.
+
+## [0.20.2] - 2026-10-14
+
+### Changed
+
+- `POST /v1/invitations/{token}/accept` and `/decline` require a signed-in
+  user session whose verified email matches the invitation. API keys,
+  builder-session tokens, anonymous sessions and unverified accounts get
+  `403`; a mismatched email gets `404`.
+- `GET /v1/invitations` applies the same verified-user rule and returns `403`
+  to API keys, builder-session tokens, anonymous sessions and unverified
+  accounts.
+
+## [0.20.1] - 2026-10-13
+
+### Added
+
+- Admin paid-invoice import endpoints:
+  - `GET /v1/admin/orgs/{orgId}/invoices/{invoiceId}/payment-preview`
+  - `POST /v1/admin/orgs/{orgId}/invoices/{invoiceId}/record-payment`
+- New admin billing contract schemas for paid-invoice preview and record-payment
+  request/response payloads.
+
+### Fixed
+
+- Invoice list/detail responses now declare the linked Stripe invoice detail
+  source marker and face-value fields already emitted by graphn-cp
+  (`detailKind`, `amountTotalCents`, `invoiceAmountDueCents`, and
+  `hostedInvoiceUrl`).
+
+## [0.20.0] - 2026-10-13
+
+### Added
+
+- Admin statement summaries expose immutable statement identity and authoritative
+  invoice membership for invoice-to-statement grouping.
+
+### Changed
+
+- **Breaking:** `Invoice.id` and `Invoice.number` are now statement-scoped for
+  all rows (`id = periodStart`, `number = STM-YYYYMMDD`). Invoiced rows no
+  longer switch to Stripe identity (`in_*` / `INV-*`); use `invoiceId` for the
+  Stripe invoice id.
+
+## [0.19.1] - 2026-10-05
+
+### Fixed
+
+- `GET /v1/blueprints` and `GET /v1/blueprints/{blueprintId}` declare
+  `security: []`. They have always been served without a token.
+
+## [0.19.0] - 2026-10-02
+
+### Added
+
+- `GET /v1/admin/orgs/{orgId}/invoices/revisions` lists immutable invoice
+  revisions for a billing period.
+- `POST /v1/admin/orgs/{orgId}/invoices/{invoiceId}/discount` applies an admin
+  discount and replaces the invoice with a new revision.
+
+## [0.18.0] - 2026-09-25
+
+### Added
+
+- Admin billing read/patch now includes `reserveEstCents` (nullable per-org
+  override) and `reserveEstCentsDefault` (display mirror of the global default).
+
+## [0.17.0] - 2026-09-24
+
+### Added
+
+- Platform admins can list, directly retrieve, preview, create, and void
+  statement-backed postpaid invoices through graphn-cp's audited billing proxy.
+
+## [0.16.0] - 2026-09-23
+
+### Added
+
+- Workspace custom router lanes: `/v1/{workspaceId}/inference-router-lanes`
+  (create, list, get, update, delete). A lane is a list of literal phrases
+  matched `any` or `all`, visible only in its own workspace, and referenced
+  from a router candidate's `lanes` as `custom:lane_<id>`.
+- Router revisions report `custom_lanes`, the lane definitions they were saved
+  with.
+### Changed
+
+- Router candidate `lanes` and published decision lanes accept
+  `custom:lane_<id>` in addition to the built-in lanes.
+
+## [0.15.0] - 2026-09-16
+
+### Added
+
+- Inference-router analytics report `shard_breakdown`, attributing requests to
+  the shard that served them so a single failing shard is distinguishable from
+  the router itself failing.
+- Inference-router analytics report `coverage_from`, `coverage_through`, and
+  `complete` so callers can distinguish clipped history from genuine zeros.
+
+## [0.14.0] - 2026-09-16
+
+### Added
+
+- Inference routers document `config.fallback_policy`, choosing between
+  `fail_closed` and `degraded_general` when no shard can classify a request.
+  Workspace routers default to `fail_closed`; Platform Auto always degrades.
+
+### Changed
+
+- Inference-router revisions expose `shard_placements` instead of a single
+  `shard_assignment`, so a revision can sit on a second shard while it is
+  migrated without losing the shard that is still serving it.
+
+## [0.13.1] - 2026-09-08
+
+### Added
+
+- Knowledge-base listing now documents server-side query and status filters,
+  cursor-consistent creation-time ordering, and first-page totals.
+
+## [0.13.0] - 2026-08-29
+
+### Changed
+
+- `Invoice.invoicePreviewUrl` now surfaces billing-cp's inline-renderable
+  statement preview URL, while `invoicePdf` remains the attachment/download URL.
+- `Invoice.amountDue` is now omitted when billing-cp could not read statement
+  figures; explicit `0` values are preserved when a real amount is known.
+
+## [0.12.0] - 2026-08-26
+
+### Added
+
+- Blueprint deployment responses now include the exact agent, function, and MCP
+  server IDs created by the deployment.
+
+## [0.11.0] - 2026-08-25
+
+### Removed
+
+- `invoiceDocumentUrl` from `Invoice`; generated statements are PDF-only and
+  continue to use the existing `invoicePdf` field.
+
+## [0.10.1] - 2026-08-25
+
+### Changed
+
+- Documented that knowledge base searches containing a video in the vector
+  top-K skip reranking and return vector-similarity scores.
+
+## [0.10.0] - 2026-08-25
+
+### Added
+
+- **Managed connections** — catalog, create, authorization, reconnect, disconnect,
+  and delete endpoints for OAuth-backed native integrations and remote MCP
+  servers.
+- **Gmail event triggers** — triggers can bind a `connection_id` and
+  provider-defined `event_type` for managed event delivery.
+- **Connection-backed MCP metadata** — MCP resources can identify their managed
+  connection and preserve published version bindings during execution.
+
+## [0.9.0] - 2026-08-20
+
+### Added
+
+Billing statements are moving from monthly to weekly, and the `Invoice`
+response did not carry enough to render a week: it had only the net credit
+figure, so a client could not show how the balance moved.
+
+- **`Invoice.creditedCents` / `Invoice.debitedCents`** — gross credits and debits for the period. `creditsCents` is unchanged and remains net.
+- **`Invoice.revision`** — statement revision. Corrections append a revision rather than rewriting the statement, so a client can tell it is holding a superseded copy.
+- **`Invoice.usageByDay`** — per-UTC-day usage for the period, as `UsageDay` (`date`, `amountCents`). Omitted when empty.
+
+### Changed
+
+No field changed shape or meaning. Two existing fields gained descriptions,
+because their names date from Stripe invoicing and mislead on a prepaid
+statement:
+
+- **`amountDue`** is the magnitude of a negative closing balance, not an unpaid bill.
+- **`hostedInvoiceUrl`** is Stripe-only and is empty on a statement-backed response.
+
+## [0.8.0] - 2026-08-20
+
+### Added
+
+- **Knowledge base document media** — `GET /v1/{workspaceId}/knowledgebases/{kbId}/documents/{docId}/media` mints a fresh playable URL. Search hits and document payloads now include `media_href`, `expires_at`, and `expires_in`.
 
 ## [0.7.0] - 2026-08-15
 
