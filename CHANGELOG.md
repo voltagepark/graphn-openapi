@@ -30,6 +30,93 @@ No `web/public/openapi.yaml` to keep in sync.
 
 ## [Unreleased]
 
+## [0.26.1] - 2026-10-24
+
+### Changed
+
+- Descriptions name what a caller sees instead of the components behind it. No schema changes.
+
+## [0.26.0] - 2026-10-23
+
+### Added
+
+- `CustomModelAccess.shared_lora` (preview): `true` when the deployment admits shared LoRA bases and adapter attaches.
+- `CustomModelAccess.reason`, which the endpoint already returned for `admin_disabled` and `purchase_required`.
+
+## [0.25.0] - 2026-10-23
+
+### Added
+
+- Added the admin endpoint for CAS-replacing statement references on an existing billing invoice.
+
+## [0.24.0] - 2026-10-22
+
+### Added
+
+- Separate customer and admin statement-list routes from invoice list/detail routes.
+- Invoice detail includes invoice-owned weekly usage buckets and an optional Stripe PDF URL.
+
+### Changed
+
+- Admin invoice preview and creation use explicit UTC windows without statement membership.
+
+## [0.23.1] - 2026-10-21
+
+### Fixed
+
+- Chat completions take a LoRA adapter's ID (`custom:<id>`), not its name; the
+  attach, adapter `name` and `lora_adapter_name` descriptions said otherwise.
+- Custom-model create refuses `max_adapters` with `400`. It was silently ignored;
+  `max_lora_rank` fixes the cap.
+
+## [0.23.0] - 2026-10-20
+
+### Added
+
+- Preview: `POST /v1/{workspaceId}/custom-models/{modelId}/wake` accepts a `ready` adapter
+  and wakes its base, returning the adapter with its base's replica fields. It refuses with `409 NOT_SERVING` when
+  the base would not serve the adapter and `403 OWNER_NOT_ACTIVE` when the base's owner is
+  suspended or being deleted.
+- Preview: `shared` and `parent_model_id` on `GET .../gpu-hours` for an adapter, whose
+  `gpu_hours` are its base's.
+- `402 PURCHASE_REQUIRED` and `403 CUSTOM_MODELS_DISABLED` on attaching an adapter, as on
+  importing a model.
+- Preview: adapter `error_message` reason codes (`ADAPTER_INVALID`,
+  `ADAPTER_RANK_EXCEEDS_BASE`, `ADAPTER_BASE_MISMATCH`, `ADAPTER_LOAD_FAILED`,
+  `WAITING_FOR_GPU_TIMEOUT`, `INFRASTRUCTURE_UNAVAILABLE`).
+
+### Changed
+
+- `POST .../refresh` refuses an adapter with `422 ADAPTER_REFRESH_UNSUPPORTED`.
+
+## [0.22.0] - 2026-10-20
+
+### Added
+
+- Preview: `POST` and `GET /v1/{workspaceId}/custom-models/{modelId}/adapters` attach
+  LoRA adapters to a shared LoRA base and list them. Attach is refused unless enabled for
+  the deployment. Attach accepts `Idempotency-Key` and can refuse with `409 NOT_LORA_ENABLED`,
+  `409 BASE_NOT_AVAILABLE`, `409 IDEMPOTENCY_KEY_REUSED` or `422 ADAPTER_LIMIT_EXCEEDED`.
+- Preview: `include=adapters` on `GET /v1/{workspaceId}/custom-models`; adapters are
+  omitted without it.
+- Preview: `parent_model_id` and `adapter_digest` on custom-model responses for adapters.
+- `409 CUSTOM_MODEL_IN_USE` on deleting an adapter an inference router lists.
+
+### Changed
+
+- `GET`, `PATCH` and `DELETE /v1/{workspaceId}/custom-models/{modelId}` accept an adapter.
+  It reports its base's GPU and replica fields, accepts only `name` on `PATCH`, and reads
+  `deleting` after `DELETE` until the base has unloaded it.
+
+## [0.21.0] - 2026-10-20
+
+### Added
+
+- Preview: `lora_enabled` and `max_lora_rank` on custom-model create, for shared LoRA
+  bases; refused unless enabled for the deployment. Responses for such a base carry
+  `lora_enabled`, `max_lora_rank` and `max_adapters`.
+- `409 HAS_ADAPTERS` on deleting a shared LoRA base that still has adapters.
+
 ## [0.20.3] - 2026-10-15
 
 ### Changed

@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Graphn API",
-    "version": "0.20.3",
+    "version": "0.26.1",
     "description": "Public API for the Graphn AI platform.\n\nThe Graphn API is the customer-facing surface for the agent platform:\nworkflows, agents, functions, MCP servers, knowledge bases, executions,\ntriggers, storage, organizations, and OpenAI-compatible inference\n(chat completions, model listings, and TTS).\n\n## Hosts\n\nThe API is split across four hosts. Operations are tagged and use\nper-operation `servers` overrides so generated SDKs that respect\nOpenAPI 3.1 per-operation `servers` (openapi-python-client >= 0.20,\nopenapi-generator >= 6.0, oapi-codegen >= 1.16, @hey-api/openapi-ts)\nroute correctly out of the box.\n\n- **Control plane** (`https://cp.graphn.ai`) — workspace-scoped CRUD\n  for agents, functions, MCP servers, workflows, knowledge bases,\n  secrets, custom models, storage buckets, organizations, and billing.\n- **Inference** (`https://model.graphn.ai`) — OpenAI-compatible\n  chat completions, model listings, and TTS.\n- **Gateway** (`https://gateway.graphn.ai`) — async workflow runs,\n  batch jobs, and UUID-keyed execution polling / cancel.\n- **Storage** (`https://storage.graphn.ai`) — S3-style object API\n  used by the CLI (`graphn storage`). The control plane also exposes\n  a REST overlay at `/v1/{workspaceId}/storages`.\n\n## Authentication\n\nAll endpoints require a workspace-scoped API key passed as\n`Authorization: Bearer gn_...`. Create keys in the Graphn dashboard\nor via `createApiKey`. Send `X-Workspace-Id` when the key is not\nalready workspace-scoped.\n\n## Errors\n\nControl-plane errors return a JSON envelope:\n\n```json\n{ \"code\": \"NOT_FOUND\", \"message\": \"model not found\" }\n```\n\nThe `code` field is a machine-readable identifier; `message` is\nintended for end-user display. Inference errors use the OpenAI-style\n`InferenceError` envelope.\n",
     "contact": {
       "name": "Graphn OpenAPI Issues",
@@ -239,6 +239,18 @@
           },
           {
             "$ref": "#/components/parameters/ContinueToken"
+          },
+          {
+            "name": "include",
+            "in": "query",
+            "required": false,
+            "description": "Preview. `adapters` also lists the adapters attached to shared\nLoRA bases; without it adapters are omitted.\n",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "adapters"
+              ]
+            }
           }
         ],
         "responses": {
@@ -251,6 +263,9 @@
                 }
               }
             }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
@@ -276,7 +291,7 @@
           "custom-models"
         ],
         "summary": "Get a custom model",
-        "description": "Returns the latest known state of the custom model, enriched with\nlive deployment status (replica counts, endpoint readiness).\n",
+        "description": "Returns the latest known state of the custom model, enriched with\nlive deployment status (replica counts, endpoint readiness). An\nadapter reports its base's GPU and replica fields.\n",
         "responses": {
           "200": {
             "description": "Custom model record.",
@@ -305,7 +320,7 @@
           "custom-models"
         ],
         "summary": "Delete a custom model",
-        "description": "Tears down the deployment and removes the model record. Idempotent.\n",
+        "description": "Tears down the deployment and removes the model record. Idempotent.\nA shared LoRA base with adapters attached is refused with\n`409 HAS_ADAPTERS`.\n\nDeleting an adapter starts its removal from the base: it reads\n`deleting` until the base has unloaded it, and repeating the call\nreturns `204`. An adapter an inference router lists is refused with\n`409 CUSTOM_MODEL_IN_USE`.\n",
         "responses": {
           "204": {
             "description": "Model deleted."
@@ -330,7 +345,7 @@
           "custom-models"
         ],
         "summary": "Update mutable fields on a custom model",
-        "description": "Update the model record (cp-side) and propagate the change to the\nlive deployment when applicable. Only a small set of fields are\nmutable post-create; immutable fields (`huggingface_model_id`,\n`weight_source`, GPU topology, …) are intentionally not exposed\nhere — change them by deleting and re-creating the model.\n\nToday the only fields that take effect immediately on the live\ndeployment are `min_replicas` and `max_replicas`: cp updates the\nDynamoDB record, then issues an AF-side in-place patch of the\nunderlying InferenceService's predictor scale bounds (no rolling\nrestart, no downtime). KServe propagates `max_replicas` through\nto the KEDA `ScaledObject`'s `maxReplicaCount` on its next\nreconcile.\n\nOther fields update the model record only and take effect on the\nnext deployment.\n",
+        "description": "Update the model record (cp-side) and propagate the change to the\nlive deployment when applicable. Only a small set of fields are\nmutable post-create; immutable fields (`huggingface_model_id`,\n`weight_source`, GPU topology, …) are intentionally not exposed\nhere — change them by deleting and re-creating the model.\n\nToday the only fields that take effect immediately on the live\ndeployment are `min_replicas` and `max_replicas`. They are\napplied to the running deployment's scale bounds in place, with\nno restart and no downtime.\n\nOther fields update the model record only and take effect on the\nnext deployment.\n\nOn an adapter only `name` is accepted; its replicas are its base's.\nAn adapter being deleted is refused with `409`.\n",
         "requestBody": {
           "required": true,
           "content": {
@@ -378,6 +393,137 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/v1/{workspaceId}/custom-models/{modelId}/adapters": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/WorkspaceId"
+        },
+        {
+          "$ref": "#/components/parameters/ModelId"
+        }
+      ],
+      "post": {
+        "operationId": "attachCustomModelAdapter",
+        "tags": [
+          "custom-models"
+        ],
+        "summary": "Attach a LoRA adapter to a shared base",
+        "description": "Preview, refused with `409 SHARED_LORA_UNSUPPORTED` unless enabled\nfor the workspace's deployment. Registers a LoRA adapter on a\nshared LoRA base (a custom model created with `lora_enabled`). The\nadapter uses no GPU of its own: the base loads it, and clients\ncall it as `custom:<id>` in chat completions once it is `ready`,\nwhere `id` is the adapter's own ID from the response. The response\nreturns immediately with the adapter `pending`.\n\nRefusals: `409 NOT_LORA_ENABLED` when the model is not a shared\nLoRA base, `409 BASE_NOT_AVAILABLE` when the base has failed or is\nbeing deleted, `422 ADAPTER_LIMIT_EXCEEDED` when the base already\nhas `max_adapters` attached, and `409 ALREADY_EXISTS` when the name\nis taken in the workspace. Attaching is gated like importing a\nmodel: `402 PURCHASE_REQUIRED` and `403 CUSTOM_MODELS_DISABLED`.\n\nStaging validates the adapter's files after the attach. An adapter\nthat fails then, or later fails to roll out, reads `failed` with an\n`error_message` that starts with a reason code: `ADAPTER_INVALID`,\n`ADAPTER_RANK_EXCEEDS_BASE`, `ADAPTER_BASE_MISMATCH`,\n`ADAPTER_LOAD_FAILED`, `WAITING_FOR_GPU_TIMEOUT` or\n`INFRASTRUCTURE_UNAVAILABLE`.\n",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "Makes the attach safe to retry for 24 hours. Repeating a request\nwith the same key and body returns the original `201`; the same\nkey with a different body is refused with\n`409 IDEMPOTENCY_KEY_REUSED`.\n",
+            "schema": {
+              "type": "string",
+              "pattern": "^[\\x21-\\x7E]{1,255}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CustomModelAdapterAttach"
+              },
+              "examples": {
+                "huggingface": {
+                  "summary": "HuggingFace adapter",
+                  "value": {
+                    "name": "support-tone",
+                    "huggingface_model_id": "my-org/qwen3-32b-support-lora"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Adapter registered.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomModel"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "description": "The organization has not made a purchase.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "description": "The base already has `max_adapters` attached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "listCustomModelAdapters",
+        "tags": [
+          "custom-models"
+        ],
+        "summary": "List the adapters attached to a shared base",
+        "description": "Preview. Every adapter on the base, oldest first, including those\nthat failed or are being deleted. Each reports the base's GPU and\nreplica fields.\n",
+        "responses": {
+          "200": {
+            "description": "The base's adapters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomModelList"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
           }
         }
       }
@@ -397,7 +543,7 @@
           "custom-models"
         ],
         "summary": "Refresh a custom model's status",
-        "description": "Forces a re-fetch of live deployment status from the underlying\ncluster. Useful when a model has been scaled to zero or recently\nupdated. The returned record may include refreshed `endpoint`,\n`status`, and `error_message` fields.\n",
+        "description": "Forces a re-fetch of live deployment status from the underlying\ncluster. Useful when a model has been scaled to zero or recently\nupdated. The returned record may include refreshed `endpoint`,\n`status`, and `error_message` fields.\n\nAn adapter has no deployment of its own: refreshing one is refused\nwith `422 ADAPTER_REFRESH_UNSUPPORTED`; refresh its base instead.\n",
         "responses": {
           "200": {
             "description": "Refreshed model record.",
@@ -417,6 +563,16 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "description": "The model is an adapter.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -436,7 +592,7 @@
           "custom-models"
         ],
         "summary": "Wake a scaled-to-zero custom model",
-        "description": "Custom models scale to zero replicas after `cooldown_seconds` of\ninactivity. Calling `wake` brings the deployment back up to its\nconfigured `min_replicas` (or 1 if `min_replicas` is 0). Returns\nimmediately; poll `getCustomModel` until `status: \"ready\"` and a\nnon-empty `endpoint`.\n",
+        "description": "Custom models scale to zero replicas after `cooldown_seconds` of\ninactivity. Calling `wake` brings the deployment back up to its\nconfigured `min_replicas` (or 1 if `min_replicas` is 0). Returns\nimmediately; poll `getCustomModel` until `status: \"ready\"` and a\nnon-empty `endpoint`.\n\nPreview: waking an adapter wakes its shared base; the response is\nthe adapter, with its base's replica fields. Only a `ready` adapter wakes its base; any\nother, or one whose base is failed, deleting or has serving turned\noff, is refused with `409 NOT_SERVING`. `403 OWNER_NOT_ACTIVE` means\nthe base's owner is suspended or being deleted.\n",
         "responses": {
           "200": {
             "description": "Wake initiated.",
@@ -456,6 +612,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
           },
           "422": {
             "description": "Model has no active deployment to wake.",
@@ -1649,7 +1808,7 @@
           "connections"
         ],
         "summary": "Invoke a GraphN-managed MCP tool",
-        "description": "Internal service-to-service endpoint used by Agent Foundry.",
+        "description": "Internal service-to-service endpoint.",
         "security": [
           {
             "InternalJWT": []
@@ -2357,10 +2516,10 @@
         "tags": [
           "billing"
         ],
-        "summary": "List billing statements",
+        "summary": "List billing invoices",
         "responses": {
           "200": {
-            "description": "Billing statements.",
+            "description": "Billing invoices.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2373,6 +2532,118 @@
                       "type": "array",
                       "items": {
                         "$ref": "#/components/schemas/Invoice"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/{orgId}/billing/invoices/{invoiceId}": {
+      "parameters": [
+        {
+          "name": "orgId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "invoiceId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "getBillingInvoice",
+        "tags": [
+          "billing"
+        ],
+        "summary": "Get billing invoice detail",
+        "responses": {
+          "200": {
+            "description": "Billing invoice detail.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "invoice"
+                  ],
+                  "properties": {
+                    "invoice": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/Invoice"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "invoicePdf": {
+                              "type": "string",
+                              "minLength": 1
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/{orgId}/billing/statements": {
+      "parameters": [
+        {
+          "name": "orgId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "limit",
+          "in": "query",
+          "required": false,
+          "schema": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      ],
+      "get": {
+        "operationId": "listBillingStatements",
+        "tags": [
+          "billing"
+        ],
+        "summary": "List billing statements",
+        "responses": {
+          "200": {
+            "description": "Billing statements.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "statements"
+                  ],
+                  "properties": {
+                    "statements": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/BillingStatementSummary"
                       }
                     },
                     "emptyReason": {
@@ -2390,7 +2661,7 @@
         }
       }
     },
-    "/v1/{orgId}/billing/invoices/{periodStart}": {
+    "/v1/{orgId}/billing/statements/{periodStart}": {
       "parameters": [
         {
           "name": "orgId",
@@ -2410,7 +2681,7 @@
         }
       ],
       "get": {
-        "operationId": "getBillingInvoice",
+        "operationId": "getBillingStatement",
         "tags": [
           "billing"
         ],
@@ -2423,11 +2694,11 @@
                 "schema": {
                   "type": "object",
                   "required": [
-                    "invoice"
+                    "statement"
                   ],
                   "properties": {
-                    "invoice": {
-                      "$ref": "#/components/schemas/Invoice"
+                    "statement": {
+                      "$ref": "#/components/schemas/BillingStatementDetail"
                     }
                   }
                 }
@@ -2622,6 +2893,74 @@
         }
       }
     },
+    "/v1/admin/orgs/{orgId}/statements": {
+      "parameters": [
+        {
+          "name": "orgId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "limit",
+          "in": "query",
+          "required": false,
+          "schema": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      ],
+      "get": {
+        "operationId": "adminListBillingStatements",
+        "tags": [
+          "admin-billing"
+        ],
+        "summary": "List billing statements for an organization",
+        "responses": {
+          "200": {
+            "description": "Statement list.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "statements"
+                  ],
+                  "properties": {
+                    "statements": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/BillingStatementSummary"
+                      }
+                    },
+                    "emptyReason": {
+                      "type": "string",
+                      "enum": [
+                        "no_billing_history",
+                        "statements_not_generated_yet"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "502": {
+            "description": "Billing service unavailable."
+          }
+        }
+      }
+    },
     "/v1/admin/orgs/{orgId}/invoices": {
       "parameters": [
         {
@@ -2634,11 +2973,11 @@
         }
       ],
       "get": {
-        "operationId": "adminListBillingStatements",
+        "operationId": "adminListBillingInvoices",
         "tags": [
           "admin-billing"
         ],
-        "summary": "List immutable billing statements for an organization",
+        "summary": "List immutable billing invoices for an organization",
         "parameters": [
           {
             "name": "limit",
@@ -2653,7 +2992,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Statement list.",
+            "description": "Invoice list.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2776,7 +3115,7 @@
         }
       }
     },
-    "/v1/admin/orgs/{orgId}/invoices/{periodStart}": {
+    "/v1/admin/orgs/{orgId}/invoices/{invoiceId}": {
       "parameters": [
         {
           "name": "orgId",
@@ -2787,7 +3126,7 @@
           }
         },
         {
-          "name": "periodStart",
+          "name": "invoiceId",
           "in": "path",
           "required": true,
           "schema": {
@@ -2796,14 +3135,14 @@
         }
       ],
       "get": {
-        "operationId": "adminGetBillingStatement",
+        "operationId": "adminGetBillingInvoice",
         "tags": [
           "admin-billing"
         ],
-        "summary": "Get one immutable billing statement detail",
+        "summary": "Get one immutable billing invoice detail",
         "responses": {
           "200": {
-            "description": "Statement detail.",
+            "description": "Invoice detail.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2840,9 +3179,9 @@
         "tags": [
           "admin-billing"
         ],
-        "summary": "Preview invoiceable statement window and immutable manifest",
+        "summary": "Preview immutable invoice window and manifest",
         "requestBody": {
-          "required": false,
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -3110,6 +3449,70 @@
           },
           "409": {
             "description": "Invoice state changed or discount conflict."
+          },
+          "502": {
+            "description": "Billing service unavailable."
+          }
+        }
+      }
+    },
+    "/v1/admin/orgs/{orgId}/invoices/{invoiceId}/statement-refs": {
+      "parameters": [
+        {
+          "name": "orgId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "invoiceId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "put": {
+        "operationId": "adminReplaceBillingInvoiceStatementRefs",
+        "tags": [
+          "admin-billing"
+        ],
+        "summary": "CAS-replace statement children on an existing invoice",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminInvoiceReplaceStatementRefsRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Associations updated or already at the desired value.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminInvoiceReplaceStatementRefsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "description": "Expected refs are stale, ownership conflicts, or stored rows are inconsistent."
           },
           "502": {
             "description": "Billing service unavailable."
@@ -11158,8 +11561,9 @@
         "type": "object",
         "required": [
           "id",
-          "number",
+          "invoiceId",
           "status",
+          "amountDue",
           "currency",
           "created",
           "periodStart",
@@ -11167,20 +11571,13 @@
         ],
         "properties": {
           "id": {
-            "type": "string",
-            "description": "Statement identity key (`periodStart`, RFC3339). This stays statement-scoped even when the row is covered by Stripe invoice lifecycle metadata; use `invoiceId` for Stripe identity."
-          },
-          "number": {
-            "type": "string",
-            "description": "Statement display number (`STM-YYYYMMDD`) derived from `periodStart`. It no longer switches to `INV-*` on invoiced rows."
+            "type": "string"
           },
           "invoiceId": {
-            "type": "string",
-            "description": "Optional Stripe invoice id for statement rows that are covered by an invoice lifecycle record."
+            "type": "string"
           },
-          "detailKind": {
-            "type": "string",
-            "description": "Optional invoice-detail source marker (`statement`, `invoice_close`, or `invoice_overlay`) for clients that need to distinguish statement-native rows from Stripe-backed overlays."
+          "number": {
+            "type": "string"
           },
           "status": {
             "type": "string",
@@ -11199,8 +11596,7 @@
           },
           "amountDue": {
             "type": "integer",
-            "format": "int64",
-            "description": "Compatibility field for legacy invoice clients. For prepaid statements this is max(-closingCents, 0), not a collections balance with payment terms. It is omitted when statement figures could not be read; an explicit 0 means the amount due is known to be zero."
+            "format": "int64"
           },
           "currency": {
             "type": "string"
@@ -11217,15 +11613,45 @@
             "type": "string",
             "format": "date-time"
           },
+          "hostedInvoiceUrl": {
+            "type": "string"
+          },
+          "invoicePdf": {
+            "type": "string",
+            "minLength": 1
+          },
+          "usageByWeek": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UsageWeek"
+            }
+          }
+        }
+      },
+      "BillingStatementSummary": {
+        "type": "object",
+        "required": [
+          "periodStart",
+          "periodEnd",
+          "status"
+        ],
+        "properties": {
+          "periodStart": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "periodEnd": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "type": "string"
+          },
           "openingCents": {
             "type": "integer",
             "format": "int64"
           },
           "usageCents": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "creditsCents": {
             "type": "integer",
             "format": "int64"
           },
@@ -11241,22 +11667,83 @@
             "type": "integer",
             "format": "int64"
           },
-          "amountTotalCents": {
+          "amountDueCents": {
             "type": "integer",
-            "format": "int64",
-            "description": "Stripe invoice face value when available. Distinct from `amountDue` compatibility semantics on prepaid statements."
+            "format": "int64"
           },
           "revision": {
             "type": "integer"
           },
           "inputFingerprint": {
-            "type": "string",
-            "description": "Exact immutable statement input fingerprint. Omitted when billing-cp could not read the underlying statement object."
+            "type": "string"
+          }
+        }
+      },
+      "BillingStatementDetail": {
+        "type": "object",
+        "required": [
+          "orgId",
+          "periodStart",
+          "periodEnd",
+          "status",
+          "openingCents",
+          "usageCents",
+          "creditedCents",
+          "debitedCents",
+          "creditsCents",
+          "closingCents",
+          "amountDueCents",
+          "revision",
+          "generatedAt"
+        ],
+        "properties": {
+          "orgId": {
+            "type": "string"
           },
-          "invoiceAmountDueCents": {
+          "periodStart": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "periodEnd": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "type": "string"
+          },
+          "openingCents": {
             "type": "integer",
-            "format": "int64",
-            "description": "Authoritative invoice-level amount from invoice metadata. Distinct from per-statement amountDue and omitted when unavailable."
+            "format": "int64"
+          },
+          "usageCents": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "creditedCents": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "debitedCents": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "creditsCents": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "closingCents": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "amountDueCents": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "inputFingerprint": {
+            "type": "string"
           },
           "usageByDay": {
             "type": "array",
@@ -11264,16 +11751,15 @@
               "$ref": "#/components/schemas/UsageDay"
             }
           },
-          "hostedInvoiceUrl": {
+          "generatedAt": {
             "type": "string",
-            "description": "Stripe-hosted invoice page URL. Statement-backed responses leave this empty."
+            "format": "date-time"
           },
-          "invoicePdf": {
+          "statementPdf": {
             "type": "string"
           },
-          "invoicePreviewUrl": {
-            "type": "string",
-            "description": "Inline-renderable statement URL. For statement rows this is a separately signed URL with inline content disposition; it may be empty when no preview artifact exists."
+          "statementPreviewUrl": {
+            "type": "string"
           }
         }
       },
@@ -11287,6 +11773,28 @@
           "date": {
             "type": "string",
             "format": "date"
+          },
+          "amountCents": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "UsageWeek": {
+        "type": "object",
+        "required": [
+          "periodStart",
+          "periodEnd",
+          "amountCents"
+        ],
+        "properties": {
+          "periodStart": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "periodEnd": {
+            "type": "string",
+            "format": "date-time"
           },
           "amountCents": {
             "type": "integer",
@@ -11542,6 +12050,10 @@
       },
       "AdminInvoicePreviewRequest": {
         "type": "object",
+        "required": [
+          "from",
+          "to"
+        ],
         "properties": {
           "from": {
             "type": "string",
@@ -11550,9 +12062,12 @@
           "to": {
             "type": "string",
             "format": "date-time"
+          },
+          "renderingMode": {
+            "type": "string"
           }
         },
-        "description": "from and to must both be set or both omitted."
+        "description": "Preview always requires explicit [from, to) bounds."
       },
       "AdminInvoiceCreateRequest": {
         "type": "object",
@@ -11574,6 +12089,9 @@
           "manifestSha256": {
             "type": "string",
             "minLength": 1
+          },
+          "renderingMode": {
+            "type": "string"
           },
           "comment": {
             "type": "string",
@@ -11699,6 +12217,73 @@
           }
         }
       },
+      "AdminInvoiceReplaceStatementRefsRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "from",
+          "to",
+          "expectedCurrent",
+          "desired",
+          "comment"
+        ],
+        "properties": {
+          "from": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "to": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expectedCurrent": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminInvoiceStatementRef"
+            }
+          },
+          "desired": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminInvoiceStatementRef"
+            }
+          },
+          "comment": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          }
+        }
+      },
+      "AdminInvoiceReplaceStatementRefsResponse": {
+        "type": "object",
+        "required": [
+          "current",
+          "updated",
+          "disposition"
+        ],
+        "properties": {
+          "current": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminInvoiceStatementRef"
+            }
+          },
+          "updated": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminInvoiceStatementRef"
+            }
+          },
+          "disposition": {
+            "type": "string",
+            "enum": [
+              "updated",
+              "unchanged"
+            ]
+          }
+        }
+      },
       "AdminInvoiceQuoteLineItem": {
         "type": "object",
         "required": [
@@ -11751,7 +12336,6 @@
         "required": [
           "periodStart",
           "periodEnd",
-          "statementRefs",
           "manifestSha256",
           "quote"
         ],
@@ -11764,13 +12348,10 @@
             "type": "string",
             "format": "date-time"
           },
-          "statementRefs": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/AdminInvoiceStatementRef"
-            }
-          },
           "manifestSha256": {
+            "type": "string"
+          },
+          "renderingMode": {
             "type": "string"
           },
           "quote": {
@@ -13097,7 +13678,7 @@
             "type": "string",
             "format": "date-time",
             "nullable": true,
-            "description": "Earliest complete analytics bucket available from DynamoDB."
+            "description": "Earliest complete analytics bucket available."
           },
           "coverage_through": {
             "type": "string",
@@ -13186,7 +13767,7 @@
           "lora_adapter_name": {
             "type": "string",
             "nullable": true,
-            "description": "vLLM routing name the LoRA adapter is served under.\nDefaults to the model's short name; clients address it\nvia `model=<lora_adapter_name>` in chat completions.\n"
+            "description": "Name the LoRA adapter is served under.\nDefaults to the model's short name. It is internal to the\ndeployment: clients call the model as `custom:<id>`.\n"
           },
           "lora_rank": {
             "type": "integer",
@@ -13278,6 +13859,26 @@
               "type": "string"
             },
             "description": "HuggingFace `architectures` field from `config.json`."
+          },
+          "lora_enabled": {
+            "type": "boolean",
+            "description": "Preview. Present and `true` on a shared LoRA base, which serves\nits own weights plus attached adapters.\n"
+          },
+          "max_lora_rank": {
+            "type": "integer",
+            "description": "Preview. Highest adapter rank a shared LoRA base accepts."
+          },
+          "max_adapters": {
+            "type": "integer",
+            "description": "Preview. Most adapters a shared LoRA base can have attached."
+          },
+          "parent_model_id": {
+            "type": "string",
+            "description": "Preview. Present on an adapter attached to a shared LoRA base:\nthe base's `id`.\n"
+          },
+          "adapter_digest": {
+            "type": "string",
+            "description": "Preview. Present on an adapter once its files have been staged:\nthe digest of the staged adapter.\n"
           },
           "created_at": {
             "type": "string",
@@ -13394,6 +13995,72 @@
             "maxLength": 200,
             "description": "Override / hint for LoRA imports. Must be one of the\nplatform's allowlisted base models (see\n`GET /v1/{workspaceId}/custom-models/supported-architectures`).\n\n* **`weight_source=s3_*`**: this is the **only** way to\n  classify the bundle as a LoRA adapter at create-time --\n  omitting it routes the import through the base path,\n  and a bundle that later turns out to be a LoRA adapter\n  will deploy to `failed` with an actionable error\n  (\"re-create with `base_model_id` set\").\n* **`weight_source=huggingface`**: the field **overrides**\n  `adapter_config.json::base_model_name_or_path` from the\n  adapter repo. Useful for adapters trained against a\n  local filesystem path (e.g. `C:/users/.../base`) whose\n  recorded base id isn't a valid HF id. When the override\n  disagrees with the adapter's declared base the caller's\n  value wins; the disagreement is logged server-side for\n  debuggability.\n\nIgnored when the resolved artifact type is `base`.\n",
             "example": "Qwen/Qwen3.5-4B"
+          },
+          "lora_enabled": {
+            "type": "boolean",
+            "default": false,
+            "description": "Preview, refused unless enabled for the workspace's\ndeployment. Creates a shared LoRA base: one GPU deployment\nthat serves its own weights and the adapters attached to it.\nRequires `max_lora_rank`. Cannot be combined with\n`base_model_id`, `quantization`, `disaggregated_pd`,\n`speculative_decoding` or more than one GPU.\n"
+          },
+          "max_lora_rank": {
+            "type": "integer",
+            "enum": [
+              16,
+              64
+            ],
+            "description": "Preview. Required with `lora_enabled`; no default. The highest\nadapter rank the base accepts. Fixed at creation: the runtime\nreserves GPU memory for it, so a lower rank leaves more KV cache.\nIt also fixes the base's `max_adapters` (8 at either rank), which\ncannot be set on create.\n"
+          }
+        }
+      },
+      "CustomModelAdapterAttach": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "Preview. Request body for\n`POST /v1/{workspaceId}/custom-models/{modelId}/adapters`.\n",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "URL-safe adapter name. Must be unique within the workspace.\nDefaults to the last segment of `huggingface_model_id`,\nlowercased. Chat completions take the adapter's ID\n(`custom:<id>`), not its name.\n",
+            "pattern": "^[a-zA-Z0-9_\\-/:.]+$",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "display_name": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "Human-friendly name for UI display. Defaults to `name`."
+          },
+          "weight_source": {
+            "$ref": "#/components/schemas/WeightSource",
+            "default": "huggingface"
+          },
+          "huggingface_model_id": {
+            "type": "string",
+            "maxLength": 193,
+            "description": "Hugging Face repo id (`org/name`) of the adapter. Required when\n`weight_source` is `huggingface`; enforced by the server.\n",
+            "example": "my-org/qwen3-32b-support-lora"
+          },
+          "hf_token_secret_id": {
+            "type": "string",
+            "description": "ID of a workspace secret holding a HuggingFace access token.\nRequired for gated or private adapter repos.\n"
+          },
+          "s3_url": {
+            "type": "string",
+            "maxLength": 2048,
+            "description": "Required when `weight_source` is `s3_presigned` or\n`s3_assume_role`; enforced by the server.\n"
+          },
+          "s3_role_arn": {
+            "type": "string",
+            "pattern": "^arn:aws:iam::\\d{12}:role/(?:[\\w+=,.@-]+/)*graphn-byom-[\\w+=,.@-]+$",
+            "description": "Required when `weight_source` is `s3_assume_role`. The role name\nmust start with `graphn-byom-`.\n"
+          },
+          "s3_external_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9+/=_\\-]{16,256}$",
+            "description": "ExternalId from the customer's IAM trust policy, for\n`s3_assume_role`. Generated when omitted.\n"
+          },
+          "base_mismatch_acknowledged": {
+            "type": "boolean",
+            "default": false,
+            "description": "Accept an adapter whose declared base differs from this base's\nHugging Face ID; staging otherwise refuses it. Recorded on the\nadapter. A base imported from S3 has no ID to compare.\n"
           }
         }
       },
@@ -13416,7 +14083,7 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 8,
-            "description": "New ceiling for the autoscaler. KServe propagates the value\nto the underlying KEDA `ScaledObject`'s `maxReplicaCount` on\nits next reconcile. Applied to the live deployment in place.\n"
+            "description": "New ceiling for the autoscaler, applied to the live\ndeployment in place.\n"
           },
           "cooldown_seconds": {
             "type": "integer",
@@ -13460,6 +14127,18 @@
           "allowed": {
             "type": "boolean",
             "description": "Whether the workspace may import custom models."
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "admin_disabled",
+              "purchase_required"
+            ],
+            "description": "Why `allowed` is false, when graphn-cp's own gate refused before\nthe allowlist was consulted.\n"
+          },
+          "shared_lora": {
+            "type": "boolean",
+            "description": "Preview. Present and `true` when this deployment admits shared\nLoRA bases (`lora_enabled` on create) and adapter attaches.\n"
           }
         }
       },
@@ -13473,7 +14152,15 @@
           "gpu_hours": {
             "type": "number",
             "minimum": 0,
-            "description": "Cumulative GPU-hours consumed by this model."
+            "description": "Cumulative GPU-hours consumed by this model. For an adapter, the\nbase's: an adapter bills no GPU time of its own.\n"
+          },
+          "shared": {
+            "type": "boolean",
+            "description": "Preview. `true` when `gpu_hours` is an adapter's base's."
+          },
+          "parent_model_id": {
+            "type": "string",
+            "description": "Preview. With `shared`, the base the hours belong to."
           }
         }
       },
@@ -13491,7 +14178,7 @@
               "s3_assume_role"
             ],
             "default": "huggingface",
-            "description": "Which validation path to run. `huggingface` (default) queries\nthe HuggingFace Hub API. `s3_assume_role` chains the same\ntwo-hop AssumeRole the smart-loader uses (bootstrap user\n→ platform role → customer role with ExternalId) and\nprobes `<s3_url>config.json` directly, so an unsupported\narchitecture surfaces before AF provisions a download Job.\n`s3_presigned` is intentionally not accepted: presigned\nURLs deliver a single archive object and architecture\ndetection requires the full extract.\n"
+            "description": "Which validation path to run. `huggingface` (default) queries\nthe HuggingFace Hub API. `s3_assume_role` assumes your role\nwith its ExternalId, as the import does, and reads\n`<s3_url>config.json` directly, so an unsupported\narchitecture surfaces before any download starts.\n`s3_presigned` is intentionally not accepted: presigned\nURLs deliver a single archive object and architecture\ndetection requires the full extract.\n"
           },
           "huggingface_model_id": {
             "type": "string",
@@ -13503,7 +14190,7 @@
             "type": "string",
             "maxLength": 2048,
             "nullable": true,
-            "description": "S3 prefix (must end with `/`). Required when\n`weight_source` is `s3_assume_role`. Points at the\ndirectory containing `config.json` + safetensors in\nHuggingFace layout; the smart-loader uses `aws s3 sync`\non this path so a single archive object is rejected at\nthe API boundary.\n"
+            "description": "S3 prefix (must end with `/`). Required when\n`weight_source` is `s3_assume_role`. Points at the\ndirectory containing `config.json` + safetensors in\nHuggingFace layout. The import copies the whole prefix,\nso a single archive object is rejected at the API\nboundary.\n"
           },
           "s3_role_arn": {
             "type": "string",
@@ -13599,7 +14286,7 @@
               "lora"
             ],
             "default": "base",
-            "description": "`lora` when AF detected an `adapter_config.json` in the HuggingFace\nrepo at validate time; `base` otherwise (the default — what every\nexisting caller saw before the LoRA auto-detect work landed). Use\nthis to branch in client code without keeping track of two\ndifferent `weight_source` enum values for the HF case.\n\nWhen `artifact_type=lora`, the `architectures`, `num_params`,\n`estimated_memory_gb`, and `max_context_length` fields describe\nthe **base** model (resolved from `adapter_config.json`), not\nthe adapter itself.\n"
+            "description": "`lora` when validation found an `adapter_config.json` in the HuggingFace\nrepo at validate time; `base` otherwise (the default — what every\nexisting caller saw before the LoRA auto-detect work landed). Use\nthis to branch in client code without keeping track of two\ndifferent `weight_source` enum values for the HF case.\n\nWhen `artifact_type=lora`, the `architectures`, `num_params`,\n`estimated_memory_gb`, and `max_context_length` fields describe\nthe **base** model (resolved from `adapter_config.json`), not\nthe adapter itself.\n"
           },
           "detected_base_model_id": {
             "type": "string",
@@ -13630,7 +14317,7 @@
             "items": {
               "type": "string"
             },
-            "description": "Capability tags this architecture exposes — `tool_calling`,\n`vision`, `image_input`, `video_input`, `streaming`, `json_mode`.\nDrives the UI capability filters and AF's per-feature gating.\n"
+            "description": "Capability tags this architecture exposes — `tool_calling`,\n`vision`, `image_input`, `video_input`, `streaming`, `json_mode`.\nDrives the console's capability filters and per-feature gating.\n"
           }
         }
       },
@@ -14518,7 +15205,7 @@
       "OpaqueObject": {
         "type": "object",
         "additionalProperties": true,
-        "description": "Untyped JSON object. Used for AF-proxied payloads."
+        "description": "Untyped JSON object. Used for proxied payloads."
       },
       "PublishMessage": {
         "type": "object",
