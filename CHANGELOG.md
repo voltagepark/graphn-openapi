@@ -30,6 +30,12 @@ No `web/public/openapi.yaml` to keep in sync.
 
 ## [Unreleased]
 
+## [0.27.0] - 2026-10-26
+
+### Changed
+
+- Inference router lanes: `vision` is replaced by `image` and `video`. Requests that name `vision` are rejected; routers stored with it still read back unchanged.
+
 ## [0.26.1] - 2026-10-24
 
 ### Changed

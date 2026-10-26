@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Graphn API
-  version: 0.26.1
+  version: 0.27.0
   description: |
     Public API for the Graphn AI platform.
 
@@ -7384,7 +7384,7 @@ components:
           uniqueItems: true
           items:
             type: string
-            pattern: '^(?:general|code|quantitative|vision|audio|contract|long_context|custom:lane_[0-9a-f]{12})$'
+            pattern: '^(?:general|code|quantitative|image|video|audio|contract|long_context|custom:lane_[0-9a-f]{12})$'
         weight:
           type: integer
           minimum: 1
@@ -7439,7 +7439,7 @@ components:
           type: array
           items:
             type: string
-            pattern: '^(?:general|code|quantitative|vision|audio|contract|long_context|custom:lane_[0-9a-f]{12})$'
+            pattern: '^(?:general|code|quantitative|image|video|audio|contract|long_context|custom:lane_[0-9a-f]{12})$'
         weight:
           type: integer
         order:
@@ -7473,12 +7473,12 @@ components:
           type: string
         lane:
           type: string
-          pattern: '^(?:code|quantitative|vision|audio|contract|long_context|custom:lane_[0-9a-f]{12})$'
+          pattern: '^(?:code|quantitative|image|video|audio|contract|long_context|custom:lane_[0-9a-f]{12})$'
         constraints:
           type: array
           items:
             type: string
-            pattern: '^(?:code|quantitative|vision|audio|contract|long_context|custom:lane_[0-9a-f]{12})$'
+            pattern: '^(?:code|quantitative|image|video|audio|contract|long_context|custom:lane_[0-9a-f]{12})$'
         candidate_refs:
           type: array
           items:
