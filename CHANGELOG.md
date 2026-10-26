@@ -30,6 +30,18 @@ No `web/public/openapi.yaml` to keep in sync.
 
 ## [Unreleased]
 
+## [0.27.2] - 2026-10-26
+
+### Changed
+
+- `CustomModelCreate.lora_enabled` also accepts a dense Qwen3.5, Qwen3.6, Qwen3.8 or Gemma 4 base. Mixture-of-experts bases and Gemma 4 31B and 26B-A4B are still refused.
+
+## [0.27.1] - 2026-10-26
+
+### Changed
+
+- `CustomModelCreate.lora_enabled` names the remaining restrictions: no `weight_source: s3_presigned`, and a Llama, Mistral, Qwen2 or Qwen3 base. A presigned shared base is now refused at create with 400 instead of failing after it.
+
 ## [0.27.0] - 2026-10-26
 
 ### Changed
