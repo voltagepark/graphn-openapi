@@ -30,6 +30,12 @@ No `web/public/openapi.yaml` to keep in sync.
 
 ## [Unreleased]
 
+## [0.28.0] - 2026-10-26
+
+### Added
+
+- `POST /v1/organizations` returns `default_workspace` when the call also created the org's first workspace. A first signup previously had to issue a second, uncached request to discover a workspace the server had just created.
+
 ## [0.27.2] - 2026-10-26
 
 ### Changed

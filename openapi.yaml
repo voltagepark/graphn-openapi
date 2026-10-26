@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Graphn API
-  version: 0.27.2
+  version: 0.28.0
   description: |
     Public API for the Graphn AI platform.
 
@@ -4979,11 +4979,16 @@ paths:
                   type: team
       responses:
         '201':
-          description: Organization created.
+          description: |
+            Organization created. `default_workspace` is present when this call
+            also created the org's first workspace, so a caller needs no second
+            read to route into the app. It is absent when the org already
+            existed or the workspace write failed — list the org's workspaces
+            in that case.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Organization'
+                $ref: '#/components/schemas/OrganizationCreated'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -10248,6 +10253,24 @@ components:
         owner_id: {type: string}
         created_at: {type: string, format: date-time}
         updated_at: {type: string, format: date-time}
+
+    OrganizationCreated:
+      description: |
+        The created organization, plus its default workspace when this request
+        created one.
+      type: object
+      additionalProperties: true
+      required: [id, name, slug, type, owner_id, created_at, updated_at]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        slug: {type: string}
+        type: {type: string, enum: [personal, team]}
+        owner_id: {type: string}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+        default_workspace:
+          $ref: '#/components/schemas/Workspace'
 
     OrganizationCreate:
       type: object
