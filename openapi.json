@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Graphn API",
-    "version": "0.28.0",
+    "version": "0.28.1",
     "description": "Public API for the Graphn AI platform.\n\nThe Graphn API is the customer-facing surface for the agent platform:\nworkflows, agents, functions, MCP servers, knowledge bases, executions,\ntriggers, storage, organizations, and OpenAI-compatible inference\n(chat completions, model listings, and TTS).\n\n## Hosts\n\nThe API is split across four hosts. Operations are tagged and use\nper-operation `servers` overrides so generated SDKs that respect\nOpenAPI 3.1 per-operation `servers` (openapi-python-client >= 0.20,\nopenapi-generator >= 6.0, oapi-codegen >= 1.16, @hey-api/openapi-ts)\nroute correctly out of the box.\n\n- **Control plane** (`https://cp.graphn.ai`) — workspace-scoped CRUD\n  for agents, functions, MCP servers, workflows, knowledge bases,\n  secrets, custom models, storage buckets, organizations, and billing.\n- **Inference** (`https://model.graphn.ai`) — OpenAI-compatible\n  chat completions, model listings, and TTS.\n- **Gateway** (`https://gateway.graphn.ai`) — async workflow runs,\n  batch jobs, and UUID-keyed execution polling / cancel.\n- **Storage** (`https://storage.graphn.ai`) — S3-style object API\n  used by the CLI (`graphn storage`). The control plane also exposes\n  a REST overlay at `/v1/{workspaceId}/storages`.\n\n## Authentication\n\nAll endpoints require a workspace-scoped API key passed as\n`Authorization: Bearer gn_...`. Create keys in the Graphn dashboard\nor via `createApiKey`. Send `X-Workspace-Id` when the key is not\nalready workspace-scoped.\n\n## Errors\n\nControl-plane errors return a JSON envelope:\n\n```json\n{ \"code\": \"NOT_FOUND\", \"message\": \"model not found\" }\n```\n\nThe `code` field is a machine-readable identifier; `message` is\nintended for end-user display. Inference errors use the OpenAI-style\n`InferenceError` envelope.\n",
     "contact": {
       "name": "Graphn OpenAPI Issues",
@@ -13999,7 +13999,7 @@
           "lora_enabled": {
             "type": "boolean",
             "default": false,
-            "description": "Preview, refused unless enabled for the workspace's\ndeployment. Creates a shared LoRA base: one GPU deployment\nthat serves its own weights and the adapters attached to it.\nRequires `max_lora_rank`. Cannot be combined with\n`base_model_id`, `quantization`, `disaggregated_pd`,\n`speculative_decoding`, `weight_source: s3_presigned` or more\nthan one GPU. The base must be a dense Llama, Mistral, Qwen2,\nQwen3, Qwen3.5, Qwen3.6, Qwen3.8 or Gemma 4 model (Gemma 4 31B\nand 26B-A4B excluded); any other base fails to deploy.\n"
+            "description": "Preview, refused unless enabled for the workspace's\ndeployment. Creates a shared LoRA base: one GPU deployment\nthat serves its own weights and the adapters attached to it.\nRequires `max_lora_rank`. Cannot be combined with\n`base_model_id`, `quantization`, `disaggregated_pd`,\n`speculative_decoding` or more than one GPU. The base must be\na dense Llama, Mistral, Qwen2, Qwen3, Qwen3.5, Qwen3.6, Qwen3.8\nor Gemma 4 model (Gemma 4 31B and 26B-A4B excluded); any other\nbase fails to deploy.\n"
           },
           "max_lora_rank": {
             "type": "integer",

@@ -30,6 +30,12 @@ No `web/public/openapi.yaml` to keep in sync.
 
 ## [Unreleased]
 
+## [0.28.1] - 2026-10-26
+
+### Changed
+
+- `CustomModelCreate.lora_enabled` accepts `weight_source: s3_presigned`. The base's architecture is checked once its archive is downloaded, and a base that is not a supported dense model fails to import with the same reason create gives for other sources.
+
 ## [0.28.0] - 2026-10-26
 
 ### Added

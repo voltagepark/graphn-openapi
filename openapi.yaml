@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Graphn API
-  version: 0.28.0
+  version: 0.28.1
   description: |
     Public API for the Graphn AI platform.
 
@@ -8220,10 +8220,10 @@ components:
             that serves its own weights and the adapters attached to it.
             Requires `max_lora_rank`. Cannot be combined with
             `base_model_id`, `quantization`, `disaggregated_pd`,
-            `speculative_decoding`, `weight_source: s3_presigned` or more
-            than one GPU. The base must be a dense Llama, Mistral, Qwen2,
-            Qwen3, Qwen3.5, Qwen3.6, Qwen3.8 or Gemma 4 model (Gemma 4 31B
-            and 26B-A4B excluded); any other base fails to deploy.
+            `speculative_decoding` or more than one GPU. The base must be
+            a dense Llama, Mistral, Qwen2, Qwen3, Qwen3.5, Qwen3.6, Qwen3.8
+            or Gemma 4 model (Gemma 4 31B and 26B-A4B excluded); any other
+            base fails to deploy.
         max_lora_rank:
           type: integer
           enum: [16, 64]
