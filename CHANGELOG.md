@@ -30,11 +30,21 @@ No `web/public/openapi.yaml` to keep in sync.
 
 ## [Unreleased]
 
+## [0.30.0] - 2026-10-27
+
+### Added
+
+- Org admins can get, set, and delete UTC-monthly monetary spend limits for users and workspaces through the new `/v1/{orgId}/billing/spend-limits/*` endpoints. A null limit is unlimited; zero is an explicit zero-spend limit.
+
 ## [0.29.0] - 2026-10-27
 
 ### Added
 
 - `AgentSpec.computer` (`AgentComputer`): an agent may be given a computer — a per-session Linux desktop with Chromium. Fields: `enabled`, `scope` (`step` | `execution`), `max_actions` (≤ 500), `display` (`width` 640–1920, `height` 480–1200), `coordinate_space` (`pixels` | `relative_1000`), `planner_model`, `grounding_model` and `planner_sees_screenshots`. Omitted when unset, so existing agent content hashes are unchanged. Invalid values are rejected with 400 `spec.computer.<field>`.
+
+### Changed
+
+- `POST /v1/{orgId}/billing/topups` rejects `amountCents` below 50. `amountCents` and `idempotencyKey` are required unless `probeOnly` is true, which runs a no-charge credential probe. `requireStripeTestMode` fails the call unless Stripe is in test mode. The operation documents 412 when Stripe is not in test mode and 503 when the probe is unavailable.
 
 ## [0.28.1] - 2026-10-26
 

@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Graphn API",
-    "version": "0.29.0",
+    "version": "0.30.0",
     "description": "Public API for the Graphn AI platform.\n\nThe Graphn API is the customer-facing surface for the agent platform:\nworkflows, agents, functions, MCP servers, knowledge bases, executions,\ntriggers, storage, organizations, and OpenAI-compatible inference\n(chat completions, model listings, and TTS).\n\n## Hosts\n\nThe API is split across four hosts. Operations are tagged and use\nper-operation `servers` overrides so generated SDKs that respect\nOpenAPI 3.1 per-operation `servers` (openapi-python-client >= 0.20,\nopenapi-generator >= 6.0, oapi-codegen >= 1.16, @hey-api/openapi-ts)\nroute correctly out of the box.\n\n- **Control plane** (`https://cp.graphn.ai`) — workspace-scoped CRUD\n  for agents, functions, MCP servers, workflows, knowledge bases,\n  secrets, custom models, storage buckets, organizations, and billing.\n- **Inference** (`https://model.graphn.ai`) — OpenAI-compatible\n  chat completions, model listings, and TTS.\n- **Gateway** (`https://gateway.graphn.ai`) — async workflow runs,\n  batch jobs, and UUID-keyed execution polling / cancel.\n- **Storage** (`https://storage.graphn.ai`) — S3-style object API\n  used by the CLI (`graphn storage`). The control plane also exposes\n  a REST overlay at `/v1/{workspaceId}/storages`.\n\n## Authentication\n\nAll endpoints require a workspace-scoped API key passed as\n`Authorization: Bearer gn_...`. Create keys in the Graphn dashboard\nor via `createApiKey`. Send `X-Workspace-Id` when the key is not\nalready workspace-scoped.\n\n## Errors\n\nControl-plane errors return a JSON envelope:\n\n```json\n{ \"code\": \"NOT_FOUND\", \"message\": \"model not found\" }\n```\n\nThe `code` field is a machine-readable identifier; `message` is\nintended for end-user display. Inference errors use the OpenAI-style\n`InferenceError` envelope.\n",
     "contact": {
       "name": "Graphn OpenAPI Issues",
@@ -2295,6 +2295,208 @@
         }
       }
     },
+    "/v1/{orgId}/billing/spend-limits/workspaces/{workspaceId}": {
+      "parameters": [
+        {
+          "name": "orgId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "workspaceId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "getWorkspaceSpendLimit",
+        "tags": [
+          "billing"
+        ],
+        "summary": "Get a workspace UTC-calendar-month monetary spend limit",
+        "responses": {
+          "200": {
+            "description": "Configured limit, or null for unlimited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpendLimit"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "put": {
+        "operationId": "putWorkspaceSpendLimit",
+        "tags": [
+          "billing"
+        ],
+        "summary": "Configure a workspace UTC-calendar-month monetary spend limit",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SpendLimitUpsert"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Configured limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpendLimit"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteWorkspaceSpendLimit",
+        "tags": [
+          "billing"
+        ],
+        "summary": "Return a workspace to unlimited monthly spend",
+        "responses": {
+          "204": {
+            "description": "Limit deleted or already absent."
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/v1/{orgId}/billing/spend-limits/users/{userId}": {
+      "parameters": [
+        {
+          "name": "orgId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "userId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "getUserSpendLimit",
+        "tags": [
+          "billing"
+        ],
+        "summary": "Get a user UTC-calendar-month monetary spend limit",
+        "responses": {
+          "200": {
+            "description": "Configured limit, or null for unlimited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpendLimit"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "put": {
+        "operationId": "putUserSpendLimit",
+        "tags": [
+          "billing"
+        ],
+        "summary": "Configure a user UTC-calendar-month monetary spend limit",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SpendLimitUpsert"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Configured limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpendLimit"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteUserSpendLimit",
+        "tags": [
+          "billing"
+        ],
+        "summary": "Return a user to unlimited monthly spend",
+        "responses": {
+          "204": {
+            "description": "Limit deleted or already absent."
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
     "/v1/{orgId}/billing/topups": {
       "parameters": [
         {
@@ -2311,7 +2513,7 @@
         "tags": [
           "billing"
         ],
-        "summary": "Charge the saved payment method and add credits",
+        "summary": "Charge the saved payment method or probe that a charge can be made",
         "requestBody": {
           "required": true,
           "content": {
@@ -2324,11 +2526,18 @@
         },
         "responses": {
           "200": {
-            "description": "Top-up completed or replayed.",
+            "description": "Charge completed or replayed, or a credential probe succeeded.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/BillingGrantResult"
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/BillingGrantResult"
+                    },
+                    {
+                      "$ref": "#/components/schemas/BillingTopUpProbeResult"
+                    }
+                  ]
                 }
               }
             }
@@ -2336,8 +2545,14 @@
           "402": {
             "description": "Payment failed."
           },
+          "412": {
+            "description": "Stripe is not in test mode."
+          },
           "428": {
             "description": "No payment method is available."
+          },
+          "503": {
+            "description": "The credential probe is unavailable."
           }
         }
       }
@@ -11476,7 +11691,84 @@
           }
         }
       },
+      "SpendLimitUpsert": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "limitMicros"
+        ],
+        "properties": {
+          "limitMicros": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "Monthly monetary cap in integer micro-USD. Zero denies all spend."
+          }
+        }
+      },
+      "SpendLimit": {
+        "type": "object",
+        "required": [
+          "orgId",
+          "scope",
+          "subjectId",
+          "period",
+          "limitMicros"
+        ],
+        "properties": {
+          "orgId": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "workspace",
+              "user"
+            ]
+          },
+          "subjectId": {
+            "type": "string"
+          },
+          "period": {
+            "type": "string",
+            "enum": [
+              "utc_calendar_month"
+            ]
+          },
+          "limitMicros": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "nullable": true,
+            "description": "Null means unlimited; zero is an explicit deny-all cap."
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
       "BillingTopUpRequest": {
+        "description": "A charge requires amountCents and idempotencyKey. A probe sends probeOnly true and does not charge or grant credits.",
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/BillingTopUpChargeRequest"
+          },
+          {
+            "$ref": "#/components/schemas/BillingTopUpProbeRequest"
+          }
+        ]
+      },
+      "BillingTopUpChargeRequest": {
         "type": "object",
         "required": [
           "amountCents",
@@ -11486,11 +11778,51 @@
           "amountCents": {
             "type": "integer",
             "format": "int64",
-            "minimum": 1
+            "minimum": 50
           },
           "idempotencyKey": {
             "type": "string",
             "minLength": 1
+          },
+          "probeOnly": {
+            "type": "boolean",
+            "const": false
+          },
+          "requireStripeTestMode": {
+            "type": "boolean",
+            "description": "Fail the charge unless Stripe is in test mode."
+          }
+        }
+      },
+      "BillingTopUpProbeRequest": {
+        "type": "object",
+        "required": [
+          "probeOnly"
+        ],
+        "properties": {
+          "probeOnly": {
+            "type": "boolean",
+            "const": true
+          },
+          "requireStripeTestMode": {
+            "type": "boolean",
+            "description": "Fail the probe unless Stripe is in test mode."
+          }
+        }
+      },
+      "BillingTopUpProbeResult": {
+        "type": "object",
+        "required": [
+          "probeOnly",
+          "stripeTestMode"
+        ],
+        "properties": {
+          "probeOnly": {
+            "type": "boolean",
+            "const": true
+          },
+          "stripeTestMode": {
+            "type": "boolean"
           }
         }
       },
