@@ -30,6 +30,12 @@ No `web/public/openapi.yaml` to keep in sync.
 
 ## [Unreleased]
 
+## [0.31.0] - 2026-10-27
+
+### Changed
+
+- Spend-limit GET responses now include the current UTC month, strongly consistent committed journal spend, and the nonnegative remaining amount. Unlimited limits remain explicit as null.
+
 ## [0.30.0] - 2026-10-27
 
 ### Added

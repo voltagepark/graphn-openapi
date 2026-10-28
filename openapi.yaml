@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Graphn API
-  version: 0.30.0
+  version: 0.31.0
   description: |
     Public API for the Graphn AI platform.
 
@@ -1538,7 +1538,7 @@ paths:
       tags: [billing]
       summary: Get a workspace UTC-calendar-month monetary spend limit
       responses:
-        '200': {description: 'Configured limit, or null for unlimited.', content: {application/json: {schema: {$ref: '#/components/schemas/SpendLimit'}}}}
+        '200': {description: 'Configured limit and current UTC-month committed spend.', content: {application/json: {schema: {$ref: '#/components/schemas/SpendLimitStatus'}}}}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
     put:
@@ -1568,7 +1568,7 @@ paths:
       tags: [billing]
       summary: Get a user UTC-calendar-month monetary spend limit
       responses:
-        '200': {description: 'Configured limit, or null for unlimited.', content: {application/json: {schema: {$ref: '#/components/schemas/SpendLimit'}}}}
+        '200': {description: 'Configured limit and current UTC-month committed spend.', content: {application/json: {schema: {$ref: '#/components/schemas/SpendLimitStatus'}}}}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
     put:
@@ -7002,6 +7002,26 @@ components:
         version: {type: integer, format: int64, minimum: 1}
         createdAt: {type: string, format: date-time}
         updatedAt: {type: string, format: date-time}
+    SpendLimitStatus:
+      allOf:
+        - {$ref: '#/components/schemas/SpendLimit'}
+        - type: object
+          required: [month, spentMicros, remainingMicros]
+          properties:
+            month:
+              type: string
+              pattern: '^[0-9]{4}-(0[1-9]|1[0-2])$'
+              description: Current UTC calendar month.
+            spentMicros:
+              type: integer
+              format: int64
+              description: Committed journal spend in integer micro-USD.
+            remainingMicros:
+              type: integer
+              format: int64
+              minimum: 0
+              nullable: true
+              description: Nonnegative limit remainder; null when unlimited.
     BillingTopUpRequest:
       description: >-
         A charge requires amountCents and idempotencyKey. A probe sends
