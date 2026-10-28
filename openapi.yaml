@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Graphn API
-  version: 0.31.0
+  version: 0.32.0
   description: |
     Public API for the Graphn AI platform.
 
@@ -3789,7 +3789,11 @@ paths:
     get:
       operationId: listExecutions
       tags: [executions]
-      summary: List executions for a workflow
+      summary: List executions, newest first
+      description: |
+        Lists executions in the workspace. `workflow_id` is optional: omit it to
+        list every workflow's executions. Results are paginated with `page` and
+        `limit` (AF caps page size at 100).
       servers:
         - url: https://cp.graphn.ai
           description: Control plane (exec_ / test_ ids)
@@ -3800,13 +3804,23 @@ paths:
       parameters:
         - name: workflow_id
           in: query
-          required: true
+          required: false
+          description: Filter to one workflow. Omit to list the whole workspace.
           schema: {type: string}
+        - name: status
+          in: query
+          required: false
+          description: Filter by execution status.
+          schema:
+            type: string
+            enum: [pending, running, completed, failed, cancelled]
         - name: limit
           in: query
-          schema: {type: integer, minimum: 1}
+          description: Page size. AF caps this at 100.
+          schema: {type: integer, minimum: 1, maximum: 100}
         - name: page
           in: query
+          description: 1-based page number.
           schema: {type: integer, minimum: 1}
       responses:
         '200':

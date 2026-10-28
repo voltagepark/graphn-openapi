@@ -30,6 +30,17 @@ No `web/public/openapi.yaml` to keep in sync.
 
 ## [Unreleased]
 
+## [0.32.0] - 2026-10-28
+
+### Added
+
+- `GET /v1/{workspaceId}/executions` accepts `status` to filter by `pending`, `running`, `completed`, `failed`, or `cancelled`.
+
+### Changed
+
+- `GET /v1/{workspaceId}/executions` no longer requires `workflow_id`. Omit it to list every execution in the workspace, newest first. It was required, so `graphn exec list` without `--workflow` — the form its own help documents — could only return `400 workflow_id query parameter is required`.
+- `limit` on the same operation is documented as capped at 100, matching the server's `page_size` bound.
+
 ## [0.31.0] - 2026-10-27
 
 ### Changed
