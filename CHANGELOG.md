@@ -30,6 +30,12 @@ No `web/public/openapi.yaml` to keep in sync.
 
 ## [Unreleased]
 
+## [0.29.0] - 2026-10-27
+
+### Added
+
+- `AgentSpec.computer` (`AgentComputer`): an agent may be given a computer — a per-session Linux desktop with Chromium. Fields: `enabled`, `scope` (`step` | `execution`), `max_actions` (≤ 500), `display` (`width` 640–1920, `height` 480–1200), `coordinate_space` (`pixels` | `relative_1000`), `planner_model`, `grounding_model` and `planner_sees_screenshots`. Omitted when unset, so existing agent content hashes are unchanged. Invalid values are rejected with 400 `spec.computer.<field>`.
+
 ## [0.28.1] - 2026-10-26
 
 ### Changed

@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Graphn API",
-    "version": "0.28.1",
+    "version": "0.29.0",
     "description": "Public API for the Graphn AI platform.\n\nThe Graphn API is the customer-facing surface for the agent platform:\nworkflows, agents, functions, MCP servers, knowledge bases, executions,\ntriggers, storage, organizations, and OpenAI-compatible inference\n(chat completions, model listings, and TTS).\n\n## Hosts\n\nThe API is split across four hosts. Operations are tagged and use\nper-operation `servers` overrides so generated SDKs that respect\nOpenAPI 3.1 per-operation `servers` (openapi-python-client >= 0.20,\nopenapi-generator >= 6.0, oapi-codegen >= 1.16, @hey-api/openapi-ts)\nroute correctly out of the box.\n\n- **Control plane** (`https://cp.graphn.ai`) — workspace-scoped CRUD\n  for agents, functions, MCP servers, workflows, knowledge bases,\n  secrets, custom models, storage buckets, organizations, and billing.\n- **Inference** (`https://model.graphn.ai`) — OpenAI-compatible\n  chat completions, model listings, and TTS.\n- **Gateway** (`https://gateway.graphn.ai`) — async workflow runs,\n  batch jobs, and UUID-keyed execution polling / cancel.\n- **Storage** (`https://storage.graphn.ai`) — S3-style object API\n  used by the CLI (`graphn storage`). The control plane also exposes\n  a REST overlay at `/v1/{workspaceId}/storages`.\n\n## Authentication\n\nAll endpoints require a workspace-scoped API key passed as\n`Authorization: Bearer gn_...`. Create keys in the Graphn dashboard\nor via `createApiKey`. Send `X-Workspace-Id` when the key is not\nalready workspace-scoped.\n\n## Errors\n\nControl-plane errors return a JSON envelope:\n\n```json\n{ \"code\": \"NOT_FOUND\", \"message\": \"model not found\" }\n```\n\nThe `code` field is a machine-readable identifier; `message` is\nintended for end-user display. Inference errors use the OpenAI-style\n`InferenceError` envelope.\n",
     "contact": {
       "name": "Graphn OpenAPI Issues",
@@ -15280,6 +15280,68 @@
           }
         }
       },
+      "AgentComputer": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "Computer-use capability. When enabled the agent step runs on a sandboxed desktop with Chromium (one Lambda MicroVM per sandbox) and acts from screenshots; the agent's model must accept image input.",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "step",
+              "execution"
+            ],
+            "description": "step (default): one sandbox per agent step; execution: shared across the workflow execution"
+          },
+          "max_actions": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 500,
+            "description": "cap on actions per step, 1-500; 0 or omitted means the default of 50"
+          },
+          "display": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "width": {
+                "type": "integer",
+                "minimum": 640,
+                "maximum": 1920
+              },
+              "height": {
+                "type": "integer",
+                "minimum": 480,
+                "maximum": 1200
+              }
+            }
+          },
+          "coordinate_space": {
+            "type": "string",
+            "enum": [
+              "pixels",
+              "relative_1000"
+            ],
+            "description": "Grid the grounding model answers in; default relative_1000 (Qwen 0..1000 grid, what qwen3-vl emits)"
+          },
+          "planner_model": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "agentic text model that plans and calls tools; empty = the agent's model"
+          },
+          "grounding_model": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "vision model that grounds described targets to screen coordinates; empty = platform default"
+          },
+          "planner_sees_screenshots": {
+            "type": "boolean",
+            "description": "also attach the latest screenshots to the planner (multimodal planners only)"
+          }
+        }
+      },
       "AgentSpec": {
         "type": "object",
         "additionalProperties": true,
@@ -15311,6 +15373,9 @@
           },
           "model_settings": {
             "$ref": "#/components/schemas/ModelSettings"
+          },
+          "computer": {
+            "$ref": "#/components/schemas/AgentComputer"
           }
         }
       },
