@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Graphn API
-  version: 0.33.0
+  version: 0.33.1
   description: |
     Public API for the Graphn AI platform.
 
@@ -3239,11 +3239,10 @@ paths:
     get:
       operationId: listMcpServerTools
       tags: [mcp-servers]
-      summary: List tools on an MCP server
-      parameters:
-        - name: refresh
-          in: query
-          schema: {type: boolean}
+      summary: List cached tools on an MCP server
+      description: |
+        Returns persisted tool metadata without executing server code. Use the
+        POST refresh-tools endpoint for explicit tool discovery.
       responses:
         '200':
           description: OK
@@ -9532,8 +9531,7 @@ components:
           type: string
           enum: [hosted, remote, managed]
         files:
-          type: object
-          additionalProperties: {type: string}
+          $ref: '#/components/schemas/McpSourceFiles'
         endpoint_url: {type: string}
         secrets:
           type: object
@@ -9556,9 +9554,22 @@ components:
       additionalProperties: true
       required: [name]
       properties:
-        name: {type: string}
-        description: {type: string}
-        inputSchema: {type: object, additionalProperties: true}
+        name:
+          type: string
+          description: Maximum 512 UTF-8 bytes; control characters and path separators are rejected.
+        description:
+          type: string
+          description: Maximum 8192 UTF-8 bytes.
+        inputSchema:
+          type: object
+          additionalProperties: true
+          description: Maximum 256 KiB serialized size and 32 levels of nesting.
+
+    McpSourceFiles:
+      type: object
+      maxProperties: 32
+      additionalProperties: {type: string}
+      description: Source content is limited to 1 MiB in aggregate; each file name is limited to 512 UTF-8 bytes.
 
     McpServer:
       type: object
@@ -9596,8 +9607,7 @@ components:
           type: string
           enum: [hosted, remote]
         files:
-          type: object
-          additionalProperties: {type: string}
+          $ref: '#/components/schemas/McpSourceFiles'
         endpoint_url: {type: string}
         workflow_id: {type: string}
         secrets:
@@ -9611,8 +9621,7 @@ components:
       properties:
         name: {type: string}
         files:
-          type: object
-          additionalProperties: {type: string}
+          $ref: '#/components/schemas/McpSourceFiles'
         endpoint_url: {type: string}
         workflow_id: {type: string}
         secrets:
@@ -9652,6 +9661,7 @@ components:
 
     McpToolList:
       type: array
+      maxItems: 128
       items: {$ref: '#/components/schemas/ToolDefinition'}
 
     McpDryRunTestRequest:
@@ -9659,8 +9669,7 @@ components:
       additionalProperties: false
       properties:
         files:
-          type: object
-          additionalProperties: {type: string}
+          $ref: '#/components/schemas/McpSourceFiles'
         tool_name: {type: string}
         input: {type: object, additionalProperties: true}
 
@@ -9669,8 +9678,7 @@ components:
       additionalProperties: false
       properties:
         files:
-          type: object
-          additionalProperties: {type: string}
+          $ref: '#/components/schemas/McpSourceFiles'
 
     McpDiscoverToolsResponse:
       type: object
@@ -9679,6 +9687,7 @@ components:
       properties:
         tools:
           type: array
+          maxItems: 128
           items: {$ref: '#/components/schemas/ToolDefinition'}
         error: {type: string}
 
@@ -9687,8 +9696,7 @@ components:
       additionalProperties: false
       properties:
         files:
-          type: object
-          additionalProperties: {type: string}
+          $ref: '#/components/schemas/McpSourceFiles'
         message: {type: string}
 
     ToolTestRequest:

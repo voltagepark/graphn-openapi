@@ -30,6 +30,28 @@ No `web/public/openapi.yaml` to keep in sync.
 
 ## [Unreleased]
 
+## [0.33.1] - 2026-10-29
+
+### Changed
+
+- `GET /v1/{workspaceId}/mcp-servers/{serverId}/tools` is now explicitly a
+  cache-only metadata read. Removed the `refresh` query parameter; callers use
+  the admission-controlled `POST .../refresh-tools` endpoint to execute tool
+  discovery.
+- Hosted MCP execution now rejects source bundles above 32 files or 1 MiB,
+  discovery results above 128 tools, invalid or duplicate tool names,
+  descriptions above 8 KiB, and schemas above 256 KiB or 32 levels deep.
+- Inline MCP discovery and dry-run deployments use 128-bit SHA-256 identities
+  instead of truncated 32-bit hashes.
+- This identity change is a one-time migration for Takao-managed discovery
+  functions; it is not shared with Agent Foundry's function-ID derivation.
+  The first discovery for each existing source bundle uses a new function ID
+  and may incur a cold start. Functions under the old IDs remain orphaned until
+  FES expires them.
+- Refresh and test now apply the hosted MCP source limits to legacy servers as
+  well as newly created or updated servers. A legacy server whose stored files
+  exceed those limits returns a validation error until its source is reduced.
+
 ## [0.33.0] - 2026-10-28
 
 ### Added

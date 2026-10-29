@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Graphn API",
-    "version": "0.33.0",
+    "version": "0.33.1",
     "description": "Public API for the Graphn AI platform.\n\nThe Graphn API is the customer-facing surface for the agent platform:\nworkflows, agents, functions, MCP servers, knowledge bases, executions,\ntriggers, storage, organizations, and OpenAI-compatible inference\n(chat completions, model listings, and TTS).\n\n## Hosts\n\nThe API is split across four hosts. Operations are tagged and use\nper-operation `servers` overrides so generated SDKs that respect\nOpenAPI 3.1 per-operation `servers` (openapi-python-client >= 0.20,\nopenapi-generator >= 6.0, oapi-codegen >= 1.16, @hey-api/openapi-ts)\nroute correctly out of the box.\n\n- **Control plane** (`https://cp.graphn.ai`) — workspace-scoped CRUD\n  for agents, functions, MCP servers, workflows, knowledge bases,\n  secrets, custom models, storage buckets, organizations, and billing.\n- **Inference** (`https://model.graphn.ai`) — OpenAI-compatible\n  chat completions, model listings, and TTS.\n- **Gateway** (`https://gateway.graphn.ai`) — async workflow runs,\n  batch jobs, and UUID-keyed execution polling / cancel.\n- **Storage** (`https://storage.graphn.ai`) — S3-style object API\n  used by the CLI (`graphn storage`). The control plane also exposes\n  a REST overlay at `/v1/{workspaceId}/storages`.\n\n## Authentication\n\nAll endpoints require a workspace-scoped API key passed as\n`Authorization: Bearer gn_...`. Create keys in the Graphn dashboard\nor via `createApiKey`. Send `X-Workspace-Id` when the key is not\nalready workspace-scoped.\n\n## Errors\n\nControl-plane errors return a JSON envelope:\n\n```json\n{ \"code\": \"NOT_FOUND\", \"message\": \"model not found\" }\n```\n\nThe `code` field is a machine-readable identifier; `message` is\nintended for end-user display. Inference errors use the OpenAI-style\n`InferenceError` envelope.\n",
     "contact": {
       "name": "Graphn OpenAPI Issues",
@@ -5488,16 +5488,8 @@
         "tags": [
           "mcp-servers"
         ],
-        "summary": "List tools on an MCP server",
-        "parameters": [
-          {
-            "name": "refresh",
-            "in": "query",
-            "schema": {
-              "type": "boolean"
-            }
-          }
-        ],
+        "summary": "List cached tools on an MCP server",
+        "description": "Returns persisted tool metadata without executing server code. Use the\nPOST refresh-tools endpoint for explicit tool discovery.\n",
         "responses": {
           "200": {
             "description": "OK",
@@ -16228,10 +16220,7 @@
             ]
           },
           "files": {
-            "type": "object",
-            "additionalProperties": {
-              "type": "string"
-            }
+            "$ref": "#/components/schemas/McpSourceFiles"
           },
           "endpoint_url": {
             "type": "string"
@@ -16270,16 +16259,27 @@
         ],
         "properties": {
           "name": {
-            "type": "string"
+            "type": "string",
+            "description": "Maximum 512 UTF-8 bytes; control characters and path separators are rejected."
           },
           "description": {
-            "type": "string"
+            "type": "string",
+            "description": "Maximum 8192 UTF-8 bytes."
           },
           "inputSchema": {
             "type": "object",
-            "additionalProperties": true
+            "additionalProperties": true,
+            "description": "Maximum 256 KiB serialized size and 32 levels of nesting."
           }
         }
+      },
+      "McpSourceFiles": {
+        "type": "object",
+        "maxProperties": 32,
+        "additionalProperties": {
+          "type": "string"
+        },
+        "description": "Source content is limited to 1 MiB in aggregate; each file name is limited to 512 UTF-8 bytes."
       },
       "McpServer": {
         "type": "object",
@@ -16369,10 +16369,7 @@
             ]
           },
           "files": {
-            "type": "object",
-            "additionalProperties": {
-              "type": "string"
-            }
+            "$ref": "#/components/schemas/McpSourceFiles"
           },
           "endpoint_url": {
             "type": "string"
@@ -16399,10 +16396,7 @@
             "type": "string"
           },
           "files": {
-            "type": "object",
-            "additionalProperties": {
-              "type": "string"
-            }
+            "$ref": "#/components/schemas/McpSourceFiles"
           },
           "endpoint_url": {
             "type": "string"
@@ -16482,6 +16476,7 @@
       },
       "McpToolList": {
         "type": "array",
+        "maxItems": 128,
         "items": {
           "$ref": "#/components/schemas/ToolDefinition"
         }
@@ -16491,10 +16486,7 @@
         "additionalProperties": false,
         "properties": {
           "files": {
-            "type": "object",
-            "additionalProperties": {
-              "type": "string"
-            }
+            "$ref": "#/components/schemas/McpSourceFiles"
           },
           "tool_name": {
             "type": "string"
@@ -16510,10 +16502,7 @@
         "additionalProperties": false,
         "properties": {
           "files": {
-            "type": "object",
-            "additionalProperties": {
-              "type": "string"
-            }
+            "$ref": "#/components/schemas/McpSourceFiles"
           }
         }
       },
@@ -16526,6 +16515,7 @@
         "properties": {
           "tools": {
             "type": "array",
+            "maxItems": 128,
             "items": {
               "$ref": "#/components/schemas/ToolDefinition"
             }
@@ -16540,10 +16530,7 @@
         "additionalProperties": false,
         "properties": {
           "files": {
-            "type": "object",
-            "additionalProperties": {
-              "type": "string"
-            }
+            "$ref": "#/components/schemas/McpSourceFiles"
           },
           "message": {
             "type": "string"
