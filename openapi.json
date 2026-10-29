@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Graphn API",
-    "version": "0.32.0",
+    "version": "0.33.0",
     "description": "Public API for the Graphn AI platform.\n\nThe Graphn API is the customer-facing surface for the agent platform:\nworkflows, agents, functions, MCP servers, knowledge bases, executions,\ntriggers, storage, organizations, and OpenAI-compatible inference\n(chat completions, model listings, and TTS).\n\n## Hosts\n\nThe API is split across four hosts. Operations are tagged and use\nper-operation `servers` overrides so generated SDKs that respect\nOpenAPI 3.1 per-operation `servers` (openapi-python-client >= 0.20,\nopenapi-generator >= 6.0, oapi-codegen >= 1.16, @hey-api/openapi-ts)\nroute correctly out of the box.\n\n- **Control plane** (`https://cp.graphn.ai`) — workspace-scoped CRUD\n  for agents, functions, MCP servers, workflows, knowledge bases,\n  secrets, custom models, storage buckets, organizations, and billing.\n- **Inference** (`https://model.graphn.ai`) — OpenAI-compatible\n  chat completions, model listings, and TTS.\n- **Gateway** (`https://gateway.graphn.ai`) — async workflow runs,\n  batch jobs, and UUID-keyed execution polling / cancel.\n- **Storage** (`https://storage.graphn.ai`) — S3-style object API\n  used by the CLI (`graphn storage`). The control plane also exposes\n  a REST overlay at `/v1/{workspaceId}/storages`.\n\n## Authentication\n\nAll endpoints require a workspace-scoped API key passed as\n`Authorization: Bearer gn_...`. Create keys in the Graphn dashboard\nor via `createApiKey`. Send `X-Workspace-Id` when the key is not\nalready workspace-scoped.\n\n## Errors\n\nControl-plane errors return a JSON envelope:\n\n```json\n{ \"code\": \"NOT_FOUND\", \"message\": \"model not found\" }\n```\n\nThe `code` field is a machine-readable identifier; `message` is\nintended for end-user display. Inference errors use the OpenAI-style\n`InferenceError` envelope.\n",
     "contact": {
       "name": "Graphn OpenAPI Issues",
@@ -2319,10 +2319,10 @@
         "tags": [
           "billing"
         ],
-        "summary": "Get a workspace UTC-calendar-month monetary spend limit",
+        "summary": "Get a workspace monetary spend limit",
         "responses": {
           "200": {
-            "description": "Configured limit and current UTC-month committed spend.",
+            "description": "Configured limit and current committed spend in the active reset period.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2344,7 +2344,7 @@
         "tags": [
           "billing"
         ],
-        "summary": "Configure a workspace UTC-calendar-month monetary spend limit",
+        "summary": "Configure a workspace monetary spend limit",
         "requestBody": {
           "required": true,
           "content": {
@@ -2382,7 +2382,7 @@
         "tags": [
           "billing"
         ],
-        "summary": "Return a workspace to unlimited monthly spend",
+        "summary": "Return a workspace to unlimited spend",
         "responses": {
           "204": {
             "description": "Limit deleted or already absent."
@@ -2420,10 +2420,10 @@
         "tags": [
           "billing"
         ],
-        "summary": "Get a user UTC-calendar-month monetary spend limit",
+        "summary": "Get a user monetary spend limit",
         "responses": {
           "200": {
-            "description": "Configured limit and current UTC-month committed spend.",
+            "description": "Configured limit and current committed spend in the active reset period.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2445,7 +2445,7 @@
         "tags": [
           "billing"
         ],
-        "summary": "Configure a user UTC-calendar-month monetary spend limit",
+        "summary": "Configure a user monetary spend limit",
         "requestBody": {
           "required": true,
           "content": {
@@ -2483,7 +2483,7 @@
         "tags": [
           "billing"
         ],
-        "summary": "Return a user to unlimited monthly spend",
+        "summary": "Return a user to unlimited spend",
         "responses": {
           "204": {
             "description": "Limit deleted or already absent."
@@ -11723,7 +11723,18 @@
             "type": "integer",
             "format": "int64",
             "minimum": 0,
-            "description": "Monthly monetary cap in integer micro-USD. Zero denies all spend."
+            "description": "Monetary cap in integer micro-USD. Zero denies all spend."
+          },
+          "resetPeriod": {
+            "type": "string",
+            "enum": [
+              "hour",
+              "day",
+              "week",
+              "month",
+              "five_minute"
+            ],
+            "description": "Reset period for budget tracking. `five_minute` requires trusted admin JWT + AAL2 and is rejected for API key, builder-session, and internal credentials."
           }
         }
       },
@@ -11734,6 +11745,7 @@
           "scope",
           "subjectId",
           "period",
+          "resetPeriod",
           "limitMicros"
         ],
         "properties": {
@@ -11753,7 +11765,21 @@
           "period": {
             "type": "string",
             "enum": [
-              "utc_calendar_month"
+              "utc_hour",
+              "utc_calendar_day",
+              "utc_calendar_week",
+              "utc_calendar_month",
+              "utc_five_minute"
+            ]
+          },
+          "resetPeriod": {
+            "type": "string",
+            "enum": [
+              "hour",
+              "day",
+              "week",
+              "month",
+              "five_minute"
             ]
           },
           "limitMicros": {
@@ -11762,6 +11788,19 @@
             "minimum": 0,
             "nullable": true,
             "description": "Null means unlimited; zero is an explicit deny-all cap."
+          },
+          "enforcementState": {
+            "type": "string",
+            "enum": [
+              "active",
+              "deferred_until_boundary"
+            ],
+            "description": "Whether spend-limit enforcement is active for the current UTC window."
+          },
+          "enforcementStartsAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Present when enforcement is deferred; the UTC boundary when enforcement begins."
           },
           "version": {
             "type": "integer",
@@ -11786,15 +11825,15 @@
           {
             "type": "object",
             "required": [
-              "month",
+              "periodStart",
               "spentMicros",
               "remainingMicros"
             ],
             "properties": {
-              "month": {
+              "periodStart": {
                 "type": "string",
-                "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$",
-                "description": "Current UTC calendar month."
+                "format": "date-time",
+                "description": "Aligned UTC period start for the active reset period."
               },
               "spentMicros": {
                 "type": "integer",

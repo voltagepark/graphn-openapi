@@ -30,6 +30,14 @@ No `web/public/openapi.yaml` to keep in sync.
 
 ## [Unreleased]
 
+## [0.33.0] - 2026-10-28
+
+### Added
+
+- Spend-limit responses expose the reset period, aligned period start, and
+  deferred-enforcement state so clients can display hourly, daily, weekly,
+  monthly, and privileged five-minute limits safely.
+
 ## [0.32.0] - 2026-10-28
 
 ### Added

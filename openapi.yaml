@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Graphn API
-  version: 0.32.0
+  version: 0.33.0
   description: |
     Public API for the Graphn AI platform.
 
@@ -1536,15 +1536,15 @@ paths:
     get:
       operationId: getWorkspaceSpendLimit
       tags: [billing]
-      summary: Get a workspace UTC-calendar-month monetary spend limit
+      summary: Get a workspace monetary spend limit
       responses:
-        '200': {description: 'Configured limit and current UTC-month committed spend.', content: {application/json: {schema: {$ref: '#/components/schemas/SpendLimitStatus'}}}}
+        '200': {description: 'Configured limit and current committed spend in the active reset period.', content: {application/json: {schema: {$ref: '#/components/schemas/SpendLimitStatus'}}}}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
     put:
       operationId: putWorkspaceSpendLimit
       tags: [billing]
-      summary: Configure a workspace UTC-calendar-month monetary spend limit
+      summary: Configure a workspace monetary spend limit
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/SpendLimitUpsert'}}}}
       responses:
         '200': {description: Configured limit., content: {application/json: {schema: {$ref: '#/components/schemas/SpendLimit'}}}}
@@ -1554,7 +1554,7 @@ paths:
     delete:
       operationId: deleteWorkspaceSpendLimit
       tags: [billing]
-      summary: Return a workspace to unlimited monthly spend
+      summary: Return a workspace to unlimited spend
       responses:
         '204': {description: Limit deleted or already absent.}
         '403': {$ref: '#/components/responses/Forbidden'}
@@ -1566,15 +1566,15 @@ paths:
     get:
       operationId: getUserSpendLimit
       tags: [billing]
-      summary: Get a user UTC-calendar-month monetary spend limit
+      summary: Get a user monetary spend limit
       responses:
-        '200': {description: 'Configured limit and current UTC-month committed spend.', content: {application/json: {schema: {$ref: '#/components/schemas/SpendLimitStatus'}}}}
+        '200': {description: 'Configured limit and current committed spend in the active reset period.', content: {application/json: {schema: {$ref: '#/components/schemas/SpendLimitStatus'}}}}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
     put:
       operationId: putUserSpendLimit
       tags: [billing]
-      summary: Configure a user UTC-calendar-month monetary spend limit
+      summary: Configure a user monetary spend limit
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/SpendLimitUpsert'}}}}
       responses:
         '200': {description: Configured limit., content: {application/json: {schema: {$ref: '#/components/schemas/SpendLimit'}}}}
@@ -1584,7 +1584,7 @@ paths:
     delete:
       operationId: deleteUserSpendLimit
       tags: [billing]
-      summary: Return a user to unlimited monthly spend
+      summary: Return a user to unlimited spend
       responses:
         '204': {description: Limit deleted or already absent.}
         '403': {$ref: '#/components/responses/Forbidden'}
@@ -6998,21 +6998,34 @@ components:
           type: integer
           format: int64
           minimum: 0
-          description: Monthly monetary cap in integer micro-USD. Zero denies all spend.
+          description: Monetary cap in integer micro-USD. Zero denies all spend.
+        resetPeriod:
+          type: string
+          enum: [hour, day, week, month, five_minute]
+          description: Reset period for budget tracking. `five_minute` requires trusted admin JWT + AAL2 and is rejected for API key, builder-session, and internal credentials.
     SpendLimit:
       type: object
-      required: [orgId, scope, subjectId, period, limitMicros]
+      required: [orgId, scope, subjectId, period, resetPeriod, limitMicros]
       properties:
         orgId: {type: string}
         scope: {type: string, enum: [workspace, user]}
         subjectId: {type: string}
-        period: {type: string, enum: [utc_calendar_month]}
+        period: {type: string, enum: [utc_hour, utc_calendar_day, utc_calendar_week, utc_calendar_month, utc_five_minute]}
+        resetPeriod: {type: string, enum: [hour, day, week, month, five_minute]}
         limitMicros:
           type: integer
           format: int64
           minimum: 0
           nullable: true
           description: Null means unlimited; zero is an explicit deny-all cap.
+        enforcementState:
+          type: string
+          enum: [active, deferred_until_boundary]
+          description: Whether spend-limit enforcement is active for the current UTC window.
+        enforcementStartsAt:
+          type: string
+          format: date-time
+          description: Present when enforcement is deferred; the UTC boundary when enforcement begins.
         version: {type: integer, format: int64, minimum: 1}
         createdAt: {type: string, format: date-time}
         updatedAt: {type: string, format: date-time}
@@ -7020,12 +7033,12 @@ components:
       allOf:
         - {$ref: '#/components/schemas/SpendLimit'}
         - type: object
-          required: [month, spentMicros, remainingMicros]
+          required: [periodStart, spentMicros, remainingMicros]
           properties:
-            month:
+            periodStart:
               type: string
-              pattern: '^[0-9]{4}-(0[1-9]|1[0-2])$'
-              description: Current UTC calendar month.
+              format: date-time
+              description: Aligned UTC period start for the active reset period.
             spentMicros:
               type: integer
               format: int64
