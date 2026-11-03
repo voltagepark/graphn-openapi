@@ -30,6 +30,18 @@ No `web/public/openapi.yaml` to keep in sync.
 
 ## [Unreleased]
 
+## [0.34.0] - 2026-11-02
+
+### Added
+
+- `GET /v1/organizations` accepts `limit` (default and maximum 100) and
+  `continue_token`, and returns `continue_token` when more organizations
+  remain. Organizations are ordered by ID.
+
+### Fixed
+
+- `GET /v1/organizations` no longer silently stops at 10 organizations.
+
 ## [0.33.1] - 2026-10-29
 
 ### Changed

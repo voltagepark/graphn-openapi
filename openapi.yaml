@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Graphn API
-  version: 0.33.1
+  version: 0.34.0
   description: |
     Public API for the Graphn AI platform.
 
@@ -5078,6 +5078,21 @@ paths:
       operationId: listOrganizations
       tags: [organizations]
       summary: List organizations for the caller
+      description: |
+        Returns the caller's organizations ordered by ID. When
+        `continue_token` is present in the response, pass it back to fetch
+        the next page.
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of organizations to return per page. Larger values are clamped to 100.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 100
+        - $ref: '#/components/parameters/ContinueToken'
       responses:
         '200':
           description: OK
@@ -10491,6 +10506,7 @@ components:
           type: array
           items: {$ref: '#/components/schemas/Organization'}
         count: {type: integer}
+        continue_token: {type: string}
 
     WorkspaceUsage:
       type: object
