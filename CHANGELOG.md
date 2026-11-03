@@ -30,6 +30,16 @@ No `web/public/openapi.yaml` to keep in sync.
 
 ## [Unreleased]
 
+## [0.35.0] - 2026-11-03
+
+### Added
+
+- `CustomModelCreate` and `CustomModel` accept and return `kv_cache_dtype`
+  (`fp8`), which stores the deployment's KV cache in FP8.
+- `CustomModelCreate.quantization` documents that `fp8` quantizes a
+  full-precision checkpoint on load, while the other values require a
+  checkpoint already quantized in that format.
+
 ## [0.34.0] - 2026-11-02
 
 ### Added

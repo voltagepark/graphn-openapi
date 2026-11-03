@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Graphn API
-  version: 0.34.0
+  version: 0.35.0
   description: |
     Public API for the Graphn AI platform.
 
@@ -8199,6 +8199,11 @@ components:
           nullable: true
           enum: [awq, gptq, fp8, squeezellm, marlin, gguf]
           description: Weight quantization scheme, if any.
+        kv_cache_dtype:
+          type: string
+          nullable: true
+          enum: [fp8]
+          description: KV cache precision. Absent means the model's own dtype.
         capabilities:
           type: array
           items: { $ref: '#/components/schemas/Capability' }
@@ -8345,6 +8350,19 @@ components:
         quantization:
           type: string
           enum: [awq, gptq, fp8, squeezellm, marlin, gguf]
+          description: |
+            `fp8` quantizes a BF16/FP16 checkpoint to FP8 as it loads, roughly
+            halving weight memory. The other values name the format of a
+            checkpoint that is already quantized; the deploy fails if the
+            checkpoint is in a different format.
+        kv_cache_dtype:
+          type: string
+          enum: [fp8]
+          description: |
+            Store the KV cache in FP8, roughly halving its memory so more
+            requests and longer contexts fit, at a small accuracy cost. Omit
+            to keep the model's own dtype. Not supported for shared LoRA bases
+            or with `disaggregated_pd`.
         capabilities:
           type: array
           items: { $ref: '#/components/schemas/Capability' }
