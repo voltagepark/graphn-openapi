@@ -30,6 +30,21 @@ No `web/public/openapi.yaml` to keep in sync.
 
 ## [Unreleased]
 
+## [0.36.0] - 2026-11-04
+
+### Added
+
+- Spend-limit status reads now include `reservedMicros`, `availableMicros`, and
+  `canAdmitNextRun` so clients can see reservation pressure and admission
+  readiness, while keeping `remainingMicros` as limit minus settled spend.
+
+### Changed
+
+- Spend-limit reads always return `enforcementState` and
+  `enforcementStartsAt`.
+- Spend-limit GET permissions now allow members to read their own user limit
+  and workspace limits for workspaces they belong to; writes remain admin-only.
+
 ## [0.35.0] - 2026-11-03
 
 ### Added

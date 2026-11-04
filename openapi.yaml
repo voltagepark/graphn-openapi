@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Graphn API
-  version: 0.35.0
+  version: 0.36.0
   description: |
     Public API for the Graphn AI platform.
 
@@ -1538,7 +1538,7 @@ paths:
       tags: [billing]
       summary: Get a workspace monetary spend limit
       responses:
-        '200': {description: 'Configured limit and current committed spend in the active reset period.', content: {application/json: {schema: {$ref: '#/components/schemas/SpendLimitStatus'}}}}
+        '200': {description: 'Configured limit plus committed spend and active reservation pressure in the active reset period.', content: {application/json: {schema: {$ref: '#/components/schemas/SpendLimitStatus'}}}}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
     put:
@@ -1568,7 +1568,7 @@ paths:
       tags: [billing]
       summary: Get a user monetary spend limit
       responses:
-        '200': {description: 'Configured limit and current committed spend in the active reset period.', content: {application/json: {schema: {$ref: '#/components/schemas/SpendLimitStatus'}}}}
+        '200': {description: 'Configured limit plus committed spend and active reservation pressure in the active reset period.', content: {application/json: {schema: {$ref: '#/components/schemas/SpendLimitStatus'}}}}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
     put:
@@ -7019,7 +7019,7 @@ components:
           description: Reset period for budget tracking. `five_minute` requires trusted admin JWT + AAL2 and is rejected for API key, builder-session, and internal credentials.
     SpendLimit:
       type: object
-      required: [orgId, scope, subjectId, period, resetPeriod, limitMicros]
+      required: [orgId, scope, subjectId, period, resetPeriod, limitMicros, enforcementState, enforcementStartsAt]
       properties:
         orgId: {type: string}
         scope: {type: string, enum: [workspace, user]}
@@ -7039,7 +7039,7 @@ components:
         enforcementStartsAt:
           type: string
           format: date-time
-          description: Present when enforcement is deferred; the UTC boundary when enforcement begins.
+          description: Empty string when active; otherwise the UTC boundary when deferred enforcement begins.
         version: {type: integer, format: int64, minimum: 1}
         createdAt: {type: string, format: date-time}
         updatedAt: {type: string, format: date-time}
@@ -7047,7 +7047,7 @@ components:
       allOf:
         - {$ref: '#/components/schemas/SpendLimit'}
         - type: object
-          required: [periodStart, spentMicros, remainingMicros]
+          required: [periodStart, spentMicros, remainingMicros, reservedMicros, availableMicros, canAdmitNextRun]
           properties:
             periodStart:
               type: string
@@ -7062,7 +7062,21 @@ components:
               format: int64
               minimum: 0
               nullable: true
-              description: Nonnegative limit remainder; null when unlimited.
+              description: Nonnegative limit remainder (limit minus settled spend, reservations not subtracted); null when unlimited.
+            reservedMicros:
+              type: integer
+              format: int64
+              minimum: 0
+              description: Active unexpired reserved micro-USD for the same subject and reset window.
+            availableMicros:
+              type: integer
+              format: int64
+              minimum: 0
+              nullable: true
+              description: Nonnegative admission budget (limit minus settled spend minus reserved); null when unlimited.
+            canAdmitNextRun:
+              type: boolean
+              description: Whether a new run can reserve its fixed per-run hold against this subject now.
     BillingTopUpRequest:
       description: >-
         A charge requires amountCents and idempotencyKey. A probe sends
