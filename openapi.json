@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Graphn API",
-    "version": "0.36.0",
+    "version": "0.37.0",
     "description": "Public API for the Graphn AI platform.\n\nThe Graphn API is the customer-facing surface for the agent platform:\nworkflows, agents, functions, MCP servers, knowledge bases, executions,\ntriggers, storage, organizations, and OpenAI-compatible inference\n(chat completions, model listings, and TTS).\n\n## Hosts\n\nThe API is split across four hosts. Operations are tagged and use\nper-operation `servers` overrides so generated SDKs that respect\nOpenAPI 3.1 per-operation `servers` (openapi-python-client >= 0.20,\nopenapi-generator >= 6.0, oapi-codegen >= 1.16, @hey-api/openapi-ts)\nroute correctly out of the box.\n\n- **Control plane** (`https://cp.graphn.ai`) — workspace-scoped CRUD\n  for agents, functions, MCP servers, workflows, knowledge bases,\n  secrets, custom models, storage buckets, organizations, and billing.\n- **Inference** (`https://model.graphn.ai`) — OpenAI-compatible\n  chat completions, model listings, and TTS.\n- **Gateway** (`https://gateway.graphn.ai`) — async workflow runs,\n  batch jobs, and UUID-keyed execution polling / cancel.\n- **Storage** (`https://storage.graphn.ai`) — S3-style object API\n  used by the CLI (`graphn storage`). The control plane also exposes\n  a REST overlay at `/v1/{workspaceId}/storages`.\n\n## Authentication\n\nAll endpoints require a workspace-scoped API key passed as\n`Authorization: Bearer gn_...`. Create keys in the Graphn dashboard\nor via `createApiKey`. Send `X-Workspace-Id` when the key is not\nalready workspace-scoped.\n\n## Errors\n\nControl-plane errors return a JSON envelope:\n\n```json\n{ \"code\": \"NOT_FOUND\", \"message\": \"model not found\" }\n```\n\nThe `code` field is a machine-readable identifier; `message` is\nintended for end-user display. Inference errors use the OpenAI-style\n`InferenceError` envelope.\n",
     "contact": {
       "name": "Graphn OpenAPI Issues",
@@ -2493,6 +2493,53 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/v1/{orgId}/billing/spend-limits/applicable": {
+      "parameters": [
+        {
+          "name": "orgId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "workspaceId",
+          "in": "query",
+          "required": false,
+          "schema": {
+            "type": "string"
+          },
+          "description": "Optional workspace to resolve workspace-level applicability."
+        }
+      ],
+      "get": {
+        "operationId": "getApplicableSpendLimits",
+        "tags": [
+          "billing"
+        ],
+        "summary": "Get spend limits applicable to the authenticated user",
+        "description": "Returns the caller's user limit status and, when workspaceId is provided and authorized, that workspace's limit status.",
+        "responses": {
+          "200": {
+            "description": "Applicable limit statuses; missing configured limits are null.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicableSpendLimitsResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
           }
         }
       }
@@ -11882,6 +11929,94 @@
             }
           }
         ]
+      },
+      "ApplicableSpendLimitStatus": {
+        "type": "object",
+        "required": [
+          "orgId",
+          "scope",
+          "subjectId",
+          "resetPeriod",
+          "periodStart",
+          "limitMicros",
+          "spentMicros",
+          "remainingMicros"
+        ],
+        "properties": {
+          "orgId": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "workspace",
+              "user"
+            ]
+          },
+          "subjectId": {
+            "type": "string"
+          },
+          "resetPeriod": {
+            "type": "string",
+            "enum": [
+              "hour",
+              "day",
+              "week",
+              "month",
+              "five_minute"
+            ]
+          },
+          "periodStart": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Aligned UTC period start for the active reset period."
+          },
+          "limitMicros": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "nullable": true,
+            "description": "Null means unlimited; zero is an explicit deny-all cap."
+          },
+          "spentMicros": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Committed journal spend in integer micro-USD."
+          },
+          "remainingMicros": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "nullable": true,
+            "description": "Nonnegative limit remainder; null when unlimited."
+          }
+        }
+      },
+      "ApplicableSpendLimitsResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "user",
+          "workspace"
+        ],
+        "properties": {
+          "user": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ApplicableSpendLimitStatus"
+              }
+            ],
+            "nullable": true
+          },
+          "workspace": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ApplicableSpendLimitStatus"
+              }
+            ],
+            "nullable": true
+          }
+        }
       },
       "BillingTopUpRequest": {
         "description": "A charge requires amountCents and idempotencyKey. A probe sends probeOnly true and does not charge or grant credits.",

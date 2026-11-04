@@ -30,6 +30,14 @@ No `web/public/openapi.yaml` to keep in sync.
 
 ## [Unreleased]
 
+## [0.37.0] - 2026-11-04
+
+### Added
+
+- Authenticated organization members can read the user and optional authorized
+  workspace spend limits that apply to them through
+  `GET /v1/{orgId}/billing/spend-limits/applicable`.
+
 ## [0.36.0] - 2026-11-04
 
 ### Added
