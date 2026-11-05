@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Graphn API
-  version: 0.37.0
+  version: 0.38.0
   description: |
     Public API for the Graphn AI platform.
 
@@ -7611,7 +7611,9 @@ components:
     Capability:
       type: string
       enum: [tool_calling, vision, embedding, reasoning]
-      description: A model capability tag used for filtering and routing.
+      description: |
+        A model capability tag used for filtering and routing. A custom
+        model's full, open-ended set is `CustomModel.derived_capabilities`.
 
     CustomModelStatus:
       type: string
@@ -8279,6 +8281,17 @@ components:
         capabilities:
           type: array
           items: { $ref: '#/components/schemas/Capability' }
+          description: |
+            `derived_capabilities` restricted to the `Capability` enum:
+            `image_input` is reported as `vision` and `thinking` as
+            `reasoning`; other values are omitted.
+        derived_capabilities:
+          type: array
+          items: { type: string }
+          description: |
+            The requested capabilities plus those derived from the
+            checkpoint's architecture, such as `image_input`, `video_input`
+            and `thinking`. Open-ended: clients must tolerate new values.
         min_replicas:
           type: integer
           minimum: 0

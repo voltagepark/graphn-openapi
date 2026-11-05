@@ -30,6 +30,21 @@ No `web/public/openapi.yaml` to keep in sync.
 
 ## [Unreleased]
 
+## [0.38.0] - 2026-11-04
+
+### Added
+
+- `CustomModel.derived_capabilities`: the full, open-ended capability set,
+  including values derived from the model's architecture such as
+  `image_input`, `video_input` and `thinking`.
+
+### Fixed
+
+- `CustomModel.capabilities` again contains only `Capability` enum values.
+  Since [#3655](https://github.com/voltagepark/takao/pull/3655) it had carried
+  architecture-derived values, which generated SDKs rejected. `image_input` is
+  now reported there as `vision` and `thinking` as `reasoning`.
+
 ## [0.37.0] - 2026-11-04
 
 ### Added
