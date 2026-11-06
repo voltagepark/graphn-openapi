@@ -30,6 +30,14 @@ No `web/public/openapi.yaml` to keep in sync.
 
 ## [Unreleased]
 
+## [0.39.0] - 2026-11-06
+
+### Added
+
+- `BillingEntitlements.topUpCents` and `topUpThresholdCents`: the org's settled
+  top-ups and paid invoices since creation, and the amount that unlocks the
+  one-time welcome credit.
+
 ## [0.38.0] - 2026-11-04
 
 ### Added

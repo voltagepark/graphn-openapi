@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Graphn API
-  version: 0.38.0
+  version: 0.39.0
   description: |
     Public API for the Graphn AI platform.
 
@@ -7285,6 +7285,14 @@ components:
             blocked at -negativeLimitCents. Omitted when the allowance is
             uncapped, and meaningless when allowNegativeBalance is false.
         freeGrantStatus: {type: string}
+        topUpCents:
+          type: integer
+          format: int64
+          description: >-
+            Settled top-ups and paid invoices since org creation, in cents.
+            Omitted when the journal read failed, so the UI can tell unknown
+            from zero. Never counts grants, refunds or adjustments.
+        topUpThresholdCents: {type: integer, format: int64}
     BillingUsage:
       type: object
       required: [totalSpendCents, currentPeriodStart, currentPeriodEnd, nextBillingDate, timeSeries]
