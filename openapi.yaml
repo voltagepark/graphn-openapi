@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Graphn API
-  version: 0.39.0
+  version: 0.39.1
   description: |
     Public API for the Graphn AI platform.
 
@@ -8429,8 +8429,12 @@ components:
         gpu_count:
           type: integer
           minimum: 1
-          maximum: 8
+          maximum: 2
           default: 1
+          description: |
+            GPUs per replica. Custom models are served on one GPU per replica,
+            so any value above 1 is refused with 400, except 2 together with
+            `disaggregated_pd`.
         max_model_len:
           type: integer
           minimum: 256

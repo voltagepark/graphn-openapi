@@ -30,6 +30,14 @@ No `web/public/openapi.yaml` to keep in sync.
 
 ## [Unreleased]
 
+## [0.39.1] - 2026-11-16
+
+### Changed
+
+- `CustomModelCreate.gpu_count` is now documented as 1–2. A value above 1 is refused with
+  400, except 2 together with `disaggregated_pd`; so is a `tensor_parallel_size` above 1.
+  Larger values were stored and shown while the model still ran on one GPU per replica.
+
 ## [0.39.0] - 2026-11-06
 
 ### Added
