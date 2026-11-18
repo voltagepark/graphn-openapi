@@ -30,6 +30,14 @@ No `web/public/openapi.yaml` to keep in sync.
 
 ## [Unreleased]
 
+## [0.40.0] - 2026-11-18
+
+### Added
+
+- `Workspace.web_search_enabled` (read-only): true when gateway web search is in effect for the
+  workspace. Clients that render model output should stop auto-loading remote images there. It
+  is a rendering hint, not an authorization input, and reads false when the policy cannot be read.
+
 ## [0.39.1] - 2026-11-16
 
 ### Changed

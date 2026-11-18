@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Graphn API
-  version: 0.39.1
+  version: 0.40.0
   description: |
     Public API for the Graphn AI platform.
 
@@ -10644,6 +10644,14 @@ components:
         name: {type: string}
         owner_id: {type: string}
         usage: {$ref: '#/components/schemas/WorkspaceUsage'}
+        web_search_enabled:
+          type: boolean
+          readOnly: true
+          description: >-
+            True when gateway web search is in effect for this workspace. A
+            rendering hint (clients should not auto-load remote images in model
+            output), not an authorization input. False when the policy cannot
+            be read.
         created_at: {type: string, format: date-time}
         updated_at: {type: string, format: date-time}
 
